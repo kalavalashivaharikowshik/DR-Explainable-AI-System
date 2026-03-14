@@ -1,0 +1,639 @@
+    <!DOCTYPE html>
+    <html>
+    <head>
+    <title>DR Explainable AI Dashboard</title>
+
+    <style>
+
+    body{
+    font-family: "Segoe UI", sans-serif;
+    background:linear-gradient(135deg,#0f172a,#1e293b);
+    margin:0;
+    padding:0;
+    color:#e2e8f0;
+    }
+
+    /* HEADER */
+
+    .header{
+    background:linear-gradient(90deg,#0ea5e9,#2563eb);
+    color:white;
+    padding:18px;
+    text-align:center;
+    font-size:24px;
+    font-weight:bold;
+    letter-spacing:1px;
+    box-shadow:0 0 20px rgba(37,99,235,0.6);
+    }
+
+    /* MAIN AREA */
+
+    .container{
+    width:1100px;
+    margin:auto;
+    margin-top:25px;
+    margin-left:300px;
+    }
+
+    /* UPLOAD BOX */
+
+    .upload-box{
+    background:rgba(255,255,255,0.05);
+    backdrop-filter:blur(10px);
+    padding:25px;
+    border-radius:12px;
+    text-align:center;
+    margin-bottom:25px;
+    border:1px solid rgba(255,255,255,0.1);
+    box-shadow:0 0 25px rgba(0,0,0,0.4);
+    transition:all 0.3s;
+    }
+
+    .upload-box:hover{
+    box-shadow:0 0 40px rgba(14,165,233,0.6);
+    }
+
+    /* BUTTONS */
+
+    button{
+    padding:10px 18px;
+    background:linear-gradient(135deg,#2563eb,#0ea5e9);
+    color:white;
+    border:none;
+    border-radius:8px;
+    cursor:pointer;
+    font-weight:600;
+    transition:all 0.25s;
+    box-shadow:0 0 8px rgba(37,99,235,0.6);
+    }
+
+    button:hover{
+    transform:scale(1.05);
+    box-shadow:0 0 18px rgba(14,165,233,1);
+    }
+
+    /* PREDICTION PANEL */
+
+    .prediction{
+    background:rgba(255,255,255,0.05);
+    padding:18px;
+    border-radius:10px;
+    margin-bottom:20px;
+    font-size:18px;
+    border:1px solid rgba(255,255,255,0.1);
+    }
+
+    /* GRID FOR AI MAPS */
+
+    .grid{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:20px;
+    }
+
+    /* CARDS */
+
+    .card{
+    background:rgba(255,255,255,0.05);
+    padding:12px;
+    border-radius:10px;
+    text-align:center;
+    border:1px solid rgba(255,255,255,0.08);
+    transition:all 0.3s;
+    }
+
+    .card:hover{
+    transform:translateY(-5px);
+    box-shadow:0 0 25px rgba(14,165,233,0.6);
+    }
+
+    .card img{
+    width:100%;
+    border-radius:8px;
+    transition:transform 0.3s;
+    }
+
+    .card img:hover{
+    transform:scale(1.03);
+    }
+
+    /* REGION PANEL */
+
+    .region{
+    background:rgba(255,255,255,0.05);
+    padding:20px;
+    border-radius:10px;
+    margin-top:20px;
+    border:1px solid rgba(255,255,255,0.08);
+    }
+
+    /* BARS */
+
+    .bar{
+    flex:1;
+    height:12px;
+    background:#334155;
+    border-radius:6px;
+    margin-left:10px;
+    }
+
+    .fill{
+    height:100%;
+    background:linear-gradient(90deg,#22c55e,#4ade80);
+    border-radius:6px;
+    transition:width 0.6s ease;
+    }
+
+    /* REPORT PANEL */
+
+    .report-panel{
+    background:rgba(255,255,255,0.05);
+    padding:15px;
+    border-radius:10px;
+    margin-top:20px;
+    text-align:center;
+    border:1px solid rgba(255,255,255,0.1);
+    }
+
+    /* SIDEBAR */
+
+    .sidebar{
+    position:fixed;
+    left:20px;
+    top:70px;
+    width:220px;
+    height:85vh;
+    background:rgba(255,255,255,0.05);
+    backdrop-filter:blur(10px);
+    padding:15px;
+    border-radius:12px;
+    border:1px solid rgba(255,255,255,0.08);
+    box-shadow:0 0 25px rgba(14,165,233,0.4);
+    }
+
+    /* REFERENCE IMAGES */
+
+    #referenceImages{
+    margin-top:10px;
+    height:335px;
+    overflow-y:auto;
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+    }
+
+    /* SCROLLBAR */
+
+    #referenceImages::-webkit-scrollbar{
+    width:6px;
+    }
+
+    #referenceImages::-webkit-scrollbar-thumb{
+    background:#0ea5e9;
+    border-radius:10px;
+    }
+
+    /* INFO ICON */
+
+    .info{
+    cursor:pointer;
+    margin-left:6px;
+    color:#38bdf8;
+    font-weight:bold;
+    }
+
+
+    </style>
+    </head>
+
+    <body>
+
+    <div class="header">
+    Diabetic Retinopathy Explainable AI System
+    </div>
+
+    <div class="container">
+
+    <div class="upload-box">
+
+    <input type="file" id="imageInput">
+
+
+    <br><br>
+
+    <button onclick="uploadImage()">Analyze Retina</button>
+
+    </div>
+
+    <div id="results"></div>
+
+
+    <div class="sidebar">
+
+    <h3>Reference Cases</h3>
+
+    <button onclick="loadFolder(0)">No DR</button><br><br>
+    <button onclick="loadFolder(1)">Mild</button><br><br>
+    <button onclick="loadFolder(2)">Moderate</button><br><br>
+    <button onclick="loadFolder(3)">Severe</button><br><br>
+    <button onclick="loadFolder(4)">Proliferative</button>
+
+    <div id="referenceImages"></div>
+
+    </div>
+
+    </div>
+
+    <script>
+
+    async function uploadImage(){
+
+    let fileInput=document.getElementById("imageInput")
+
+    /* SHOW LOADING MESSAGE */
+
+    document.getElementById("results").innerHTML =
+    "<h3 style='text-align:center'>Analyzing Retina... 🧠</h3>";
+
+    let formData=new FormData()
+
+    formData.append("file",fileInput.files[0])
+
+    let response=await fetch("http://127.0.0.1:8000/analyze",{
+    method:"POST",
+    body:formData
+    })
+
+    let data=await response.json()
+
+    displayResults(data)
+
+
+    }
+
+    function displayResults(data){
+
+    let html=""
+
+    html+=`
+    <div class="prediction">
+    Prediction: <b>${data.prediction}</b><br>
+    Focus Consistency: <b>${data.consistency_label}</b>
+
+    <div class="report-panel">
+
+    <h3>AI Clinical Report</h3>
+
+    <input 
+    type="email" 
+    id="doctorEmail" 
+    placeholder="Enter doctor email"
+    style="padding:8px;width:220px;margin-bottom:10px;border-radius:5px;border:1px solid #ccc">
+
+    <br>
+
+    <button onclick="previewReport()">Preview Report</button>
+
+    <button onclick="downloadReport()">Download PDF</button>
+
+    <button onclick="sendReportEmail()">Send Report</button>
+
+    </div>
+    `
+
+    html+=`
+    <h3>Severity Progress</h3>
+
+    <div class="severity">
+
+    <div class="sev-row">
+    <span>No DR</span>
+    <div class="bar"><div class="fill" id="bar0"></div></div>
+    </div>
+
+    <div class="sev-row">
+    <span>Mild</span>
+    <div class="bar"><div class="fill" id="bar1"></div></div>
+    </div>
+
+    <div class="sev-row">
+    <span>Moderate</span>
+    <div class="bar"><div class="fill" id="bar2"></div></div>
+    </div>
+
+    <div class="sev-row">
+    <span>Severe</span>
+    <div class="bar"><div class="fill" id="bar3"></div></div>
+    </div>
+
+    <div class="sev-row">
+    <span>Proliferative</span>
+    <div class="bar"><div class="fill" id="bar4"></div></div>
+    </div>
+
+    </div>
+    `
+
+    /* ADD COMPARISON PANEL HERE */
+
+
+    html+=`
+    <div class="grid">
+
+    <div class="card">
+    <h3>
+    GradCAM
+    <span class="info" onclick="showInfo('gradcam')">ℹ</span>
+    </h3>
+    <img src="http://127.0.0.1:8000/${data.gradcam_heatmap}">
+    </div>
+
+    <div class="card">
+    <h3>
+    Evidence Map
+    <span class="info" onclick="showInfo('evidence')">ℹ</span>
+    </h3>
+
+    <img src="http://127.0.0.1:8000/${data.evidence_map}">
+    </div>
+
+    <div class="card">
+    <h3>
+    Consistency Map
+    <span class="info" onclick="showInfo('consistency')">ℹ</span>
+    </h3>
+
+    <img src="http://127.0.0.1:8000/${data.consistency_image}">
+    </div>
+
+    <div class="card">
+    <h3>
+    Saliency Map
+    <span class="info" onclick="showInfo('saliency')">ℹ</span>
+    </h3>
+
+    <img src="http://127.0.0.1:8000/${data.saliency_map}">
+    </div>
+
+    <div class="card">
+    <h3>
+    Region Importance
+    <span class="info" onclick="showInfo('region')">ℹ</span>
+    </h3>
+
+    <img src="http://127.0.0.1:8000/${data.region_map}">
+    </div>
+
+
+    <div class="card">
+    <h3>
+    Pseudo-3D Retina View
+    <span class="info" onclick="showInfo('pseudo3d')">ℹ</span>
+    </h3>
+
+    <img src="http://127.0.0.1:8000/${data.pseudo3d_map}">
+    </div>
+
+    <div class="card">
+    <h3>
+    Retinal Quality Overlay
+    <span class="info" onclick="showInfo('quality')">ℹ</span>
+    </h3>
+
+    <img src="http://127.0.0.1:8000/${data.quality_overlay}">
+    </div>
+
+    </div>
+    `
+
+    html+=`
+    <div class="region">
+    <h3>Region Importance Distribution</h3>
+
+    Macula
+    <div class="bar">
+    <div class="fill" style="width:${data.macula_importance*100}%"></div>
+    </div>
+
+    Mid Retina
+    <div class="bar">
+    <div class="fill" style="width:${data.mid_importance*100}%"></div>
+    </div>
+
+    Peripheral
+    <div class="bar">
+    <div class="fill" style="width:${data.peripheral_importance*100}%"></div>
+    </div>
+
+    </div>
+    `
+
+    document.getElementById("results").innerHTML=html
+
+    let probs = data.probabilities
+
+    for(let i=0;i<5;i++){
+
+    let percent = probs[i] * 100
+
+    document.getElementById("bar"+i).style.width = percent + "%"
+
+    }
+
+    }
+
+
+
+    async function loadFolder(folder){
+
+    let response = await fetch(`http://127.0.0.1:8000/reference/${folder}`)
+
+    let data = await response.json()
+
+    let html=""
+
+    data.images.forEach(img => {
+
+    html += `<img src="http://127.0.0.1:8000${img}" 
+    style="width:100%;border-radius:6px">`
+
+    })
+
+    document.getElementById("referenceImages").innerHTML = html
+
+    }
+
+    function previewReport(){
+
+    window.open(
+    "http://127.0.0.1:8000/outputs/report/dr_report.pdf",
+    "_blank"
+    )
+
+    }
+
+    function downloadReport(){
+
+    let link = document.createElement("a")
+
+    link.href="http://127.0.0.1:8000/outputs/report/dr_report.pdf"
+
+    link.download="DR_AI_Report.pdf"
+
+    link.click()
+
+    }
+
+    function emailReport(){
+
+    alert("Report will be sent to the email entered above.")
+
+    }
+
+
+
+    async function sendReportEmail(){
+
+    let email = document.getElementById("doctorEmail").value
+
+    if(!email){
+
+    alert("Please enter doctor email")
+
+    return
+
+    }
+
+    let response = await fetch("http://127.0.0.1:8000/send-report",{
+
+    method:"POST",
+
+    headers:{
+    "Content-Type":"application/json"
+    },
+
+    body:JSON.stringify({
+    email:email
+    })
+
+    })
+
+    let data = await response.json()
+
+    alert("Report sent successfully")
+
+    }
+
+    function showInfo(type){
+
+    let text=""
+
+    if(type==="gradcam"){
+    text=`Grad-CAM Heatmap
+
+    Purpose:
+    Shows the retinal regions that most influenced the AI model prediction.
+
+    Color Guide:
+    Red → strongest attention
+    Yellow → moderate attention
+    Blue → low attention
+
+    Tip:
+    If highlighted areas overlap lesions like hemorrhages or exudates,
+    the AI is focusing on medically relevant regions.`
+    }
+
+    else if(type==="evidence"){
+    text=`Layered Retinal Evidence Map
+
+    Purpose:
+    Combines AI attention with detected lesion markers.
+
+    Markers:
+    Red → hemorrhages
+    Yellow → exudates
+    Blue → microaneurysms
+
+    Tip:
+    Overlap between lesions and heatmap means the AI used those
+    pathological features for prediction.`
+    }
+
+    else if(type==="consistency"){
+    text=`Focus Consistency Visualization
+
+    Purpose:
+    Checks if AI attention aligns with real lesions.
+
+    Green outline → strong agreement
+    Yellow outline → partial agreement
+
+    High agreement increases trust in the prediction.`
+    }
+
+    else if(type==="saliency"){
+    text=`Saliency Behavior
+
+    Purpose:
+    Shows how concentrated AI attention is around lesions.
+
+    Focused → attention near lesion
+    Moderate → slightly spread
+    Diffuse → scattered attention
+
+    Focused attention usually means more reliable reasoning.`
+    }
+
+    else if(type==="region"){
+    text=`Region-Wise Retina Importance
+
+    Purpose:
+    Shows which retinal regions influenced the prediction.
+
+    Macula → center vision
+    Optic Disc → nerve exit
+    Peripheral → outer retina
+
+    Darker regions indicate stronger influence.`
+    }
+
+    else if(type==="pseudo3d"){
+    text=`Pseudo-3D Retinal View
+
+    Purpose:
+    Separates retinal layers for easier interpretation.
+
+    Layers:
+    Original retina
+    Blood vessels
+    Detected lesions
+    AI attention
+
+    Helps visualize how anatomy and AI focus interact.`
+    }
+
+    else if(type==="quality"){
+    text=`Retinal Quality Overlay
+
+    Purpose:
+    Highlights areas with poor diagnostic quality.
+
+    Gray areas → blurred or low quality
+    Clear areas → reliable for analysis
+
+    If key regions are masked, the image may not be suitable
+    for accurate AI diagnosis.`
+    }
+
+    alert(text)
+
+    }
+
+    </script>
+
+
+
+
+    </body>
+    </html>
