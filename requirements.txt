@@ -1,9 +1,10 @@
-gradio
+fastapi
+uvicorn
 torch
 torchvision
 opencv-python
 numpy
-Pillow
-fastapi
+pillow
+python-multipart
 reportlab
-PyPDF2
+pypdf2
