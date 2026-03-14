@@ -8,6 +8,9 @@ from src.inference.pipeline import run_full_analysis
 from fastapi.staticfiles import StaticFiles
 from src.email_service.send_email import send_email
 
+os.makedirs("outputs", exist_ok=True)
+os.makedirs("data", exist_ok=True)
+
 app = FastAPI()
 
 app.mount("/outputs", StaticFiles(directory="outputs"), name="outputs")
