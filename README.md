@@ -266,14 +266,18 @@ Then display them in README like this:
 
 ![Dashboard](dashboard.png)
 
-## GradCAM Heatmap
+## Output
 
-![GradCAM](docs/images/gradcam.png)
+![Outout 1](Outout1.png)
 
-## Evidence Map
+![Outout 2](Outout2.png)
 
-![Evidence](docs/images/evidence_map.png)
-📈 Expected Outcomes
+![Outout 3](Outout3.png)
+
+![Outout 4](Outout4.png)
+
+![Outout 5](Outout5.png)
+
 
 The system provides:
 
