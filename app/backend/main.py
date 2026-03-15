@@ -1,18 +1,23 @@
-from fastapi import FastAPI, UploadFile, File, Form
+from fastapi import FastAPI, UploadFile, File, Form, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import shutil
 import os
 
 from src.inference.pipeline import run_full_analysis
-from fastapi.staticfiles import StaticFiles
 from src.email_service.send_email import send_email
 
 app = FastAPI()
 
+# Ensure required directories exist
+os.makedirs("outputs", exist_ok=True)
+os.makedirs("data", exist_ok=True)
+
+# Static folders
 app.mount("/outputs", StaticFiles(directory="outputs"), name="outputs")
 app.mount("/data", StaticFiles(directory="data"), name="data")
 
+# Upload folder
 UPLOAD_DIR = "app/uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
@@ -55,6 +60,7 @@ async def analyze_retina(
 
     return results
 
+
 @app.get("/reference/{folder_id}")
 def get_reference_images(folder_id: int):
 
@@ -62,14 +68,12 @@ def get_reference_images(folder_id: int):
 
     images = []
 
-    for file in os.listdir(folder):
-
-        images.append(f"/data/reference_images/{folder_id}/{file}")
+    if os.path.exists(folder):
+        for file in os.listdir(folder):
+            images.append(f"/data/reference_images/{folder_id}/{file}")
 
     return {"images": images}
 
-from fastapi import Body
-from src.email_service.send_email import send_email
 
 @app.post("/send-report")
 def send_report(data: dict = Body(...)):
