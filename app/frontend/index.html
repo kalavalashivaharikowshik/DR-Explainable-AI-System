@@ -202,6 +202,63 @@
     font-weight:bold;
     }
 
+    .workflow-btn{
+    margin-left:20px;
+    padding:8px 14px;
+    background:#0ea5e9;
+    border:none;
+    border-radius:8px;
+    cursor:pointer;
+    font-size:14px;
+    font-weight:600;
+    box-shadow:0 0 10px rgba(14,165,233,0.8);
+    transition:all 0.3s;
+    }
+
+    .workflow-btn:hover{
+    transform:scale(1.05);
+    box-shadow:0 0 20px rgba(14,165,233,1);
+    }
+
+    /* DROPDOWN PANEL */
+
+    .workflow-panel{
+    display:none;
+    position:absolute;
+    top:70px;
+    left:50%;
+    transform:translateX(-50%);
+    width:600px;
+    background:rgba(30,41,59,0.95);
+    padding:20px;
+    border-radius:12px;
+    border:1px solid rgba(255,255,255,0.1);
+    box-shadow:0 0 25px rgba(14,165,233,0.7);
+    z-index:1000;
+    animation:fadeSlide 0.4s ease;
+    }
+
+    .workflow-panel p{
+    margin:8px 0;
+    font-size:15px;
+    }
+
+    /* Animation */
+
+    @keyframes fadeSlide{
+
+    from{
+    opacity:0;
+    transform:translate(-50%,-20px);
+    }
+
+    to{
+    opacity:1;
+    transform:translate(-50%,0);
+    }
+
+    }
+
 
     </style>
     </head>
@@ -209,7 +266,27 @@
     <body>
 
     <div class="header">
-    Diabetic Retinopathy Explainable AI System
+
+    <span>Diabetic Retinopathy Explainable AI System</span>
+
+    <button class="workflow-btn" onclick="toggleWorkflow()">
+    ⚙ System Workflow
+    </button>
+
+   </div>
+
+    <!-- SYSTEM WORKFLOW PANEL -->
+
+    <div id="workflowPanel" class="workflow-panel">
+
+    <h3>System Workflow</h3>
+
+    <p>1️⃣ Upload retinal fundus image</p>
+    <p>2️⃣ AI model analyzes diabetic retinopathy severity</p>
+    <p>3️⃣ Explainable AI visualizations are generated</p>
+    <p>4️⃣ Clinician reviews AI evidence maps</p>
+    <p>5️⃣ Secure clinical report can be downloaded or emailed</p>
+
     </div>
 
     <div class="container">
@@ -259,7 +336,7 @@
 
     formData.append("file",fileInput.files[0])
 
-    let response=await fetch("https://dr-explainable-ai.onrender.com/analyze",{
+    let response=await fetch("http://127.0.0.1:8000/analyze",{
     method:"POST",
     body:formData
     })
@@ -273,11 +350,23 @@
 
     function displayResults(data){
 
+    window.report_pdf = data.report_pdf
+    window.report_password = data.pdf_password
+
     let html=""
 
     html+=`
     <div class="prediction">
+
+    <h3>AI Diagnosis Summary</h3>
+
+    Model: <b>EfficientNet-B4 (Transfer Learning)</b><br>
+    Dataset: <b>EyePACS Diabetic Retinopathy Dataset</b><br><br>
+
     Prediction: <b>${data.prediction}</b><br>
+
+    Confidence: <b>${(Math.max(...data.probabilities)*100).toFixed(1)}%</b><br>
+
     Focus Consistency: <b>${data.consistency_label}</b>
 
     <div class="report-panel">
@@ -428,6 +517,24 @@
     </div>
     `
 
+    html+=`
+
+    <div style="
+    margin-top:30px;
+    padding:12px;
+    font-size:13px;
+    text-align:center;
+    opacity:0.7;
+    border-top:1px solid rgba(255,255,255,0.1);
+    ">
+
+    ⚠ Research Use Only — This AI system assists clinical decision-making
+    and should not replace professional ophthalmologist diagnosis.
+
+    </div>
+
+    `
+
     document.getElementById("results").innerHTML=html
 
     let probs = data.probabilities
@@ -497,11 +604,8 @@
     let email = document.getElementById("doctorEmail").value
 
     if(!email){
-
     alert("Please enter doctor email")
-
     return
-
     }
 
     let response = await fetch("http://127.0.0.1:8000/send-report",{
@@ -513,7 +617,9 @@
     },
 
     body:JSON.stringify({
-    email:email
+    email:email,
+    pdf_path:window.report_pdf,
+    password:window.report_password
     })
 
     })
@@ -627,6 +733,18 @@
     }
 
     alert(text)
+
+    }
+
+    function toggleWorkflow(){
+
+    let panel = document.getElementById("workflowPanel")
+
+    if(panel.style.display === "block"){
+    panel.style.display = "none"
+    }else{
+    panel.style.display = "block"
+    }
 
     }
 

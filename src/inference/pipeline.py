@@ -78,13 +78,10 @@ def run_full_analysis(image_path):
 
     report_path = generate_pdf_report(image_path, results)
 
-    results["report_pdf"] = report_path
-
-    report_path = generate_pdf_report(image_path, results)
-
     encrypted_pdf, password = encrypt_pdf(report_path)
 
     results["report_pdf"] = encrypted_pdf
+    results["pdf_password"] = password
 
     quality = generate_quality_overlay(image_path)
 

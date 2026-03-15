@@ -4,8 +4,8 @@ from email.message import EmailMessage
 
 def send_email(receiver_email, pdf_path, password):
 
-    sender_email = "your_email@gmail.com"
-    sender_password = "your_app_password"
+    sender_email = "kalavalakowshik183@gmail.com"
+    sender_password = "alln zbwg bdsf gcqk"
 
     msg = EmailMessage()
 

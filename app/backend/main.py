@@ -8,9 +8,6 @@ from src.inference.pipeline import run_full_analysis
 from fastapi.staticfiles import StaticFiles
 from src.email_service.send_email import send_email
 
-os.makedirs("outputs", exist_ok=True)
-os.makedirs("data", exist_ok=True)
-
 app = FastAPI()
 
 app.mount("/outputs", StaticFiles(directory="outputs"), name="outputs")
@@ -37,8 +34,7 @@ def home():
 @app.post("/analyze")
 async def analyze_retina(
     file: UploadFile = File(...),
-    email: str = Form(None),
-    password: str = Form(None)
+    email: str = Form(None)
 ):
 
     file_path = os.path.join(UPLOAD_DIR, file.filename)
@@ -51,7 +47,11 @@ async def analyze_retina(
 
     # Send email if provided
     if email:
-        send_email(email, results["report_pdf"], password)
+        send_email(
+            email,
+            results["report_pdf"],
+            results["pdf_password"]
+        )
 
     return results
 
@@ -72,15 +72,12 @@ from fastapi import Body
 from src.email_service.send_email import send_email
 
 @app.post("/send-report")
-
 def send_report(data: dict = Body(...)):
 
     email = data["email"]
-
-    pdf_path = "outputs/report/dr_report_secure.pdf"
-
-    password = "sent_in_email"
+    pdf_path = data["pdf_path"]
+    password = data["password"]
 
     send_email(email, pdf_path, password)
 
-    return {"status":"email_sent"}
+    return {"status": "email_sent"}
