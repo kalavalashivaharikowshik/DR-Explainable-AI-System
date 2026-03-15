@@ -32,7 +32,9 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 # ==============================
 
 model = get_model().to(DEVICE)
-model.load_state_dict(torch.load(MODEL_PATH, weights_only=True))
+model.load_state_dict(
+    torch.load(MODEL_PATH, map_location=torch.device("cpu"), weights_only=True)
+)
 model.eval()
 
 # EfficientNet final convolution layer
