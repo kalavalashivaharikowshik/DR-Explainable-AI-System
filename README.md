@@ -1,4 +1,3 @@
-﻿# DR-Explainable-AI-System
 🧠 DR Explainable AI System
 AI-Powered Early Detection of Diabetic Retinopathy with Explainable Visualization
 
@@ -265,7 +264,7 @@ Then display them in README like this:
 
 ## System Dashboard
 
-
+![Dashboard](docs/images/dashboard.png)
 
 ## GradCAM Heatmap
 
