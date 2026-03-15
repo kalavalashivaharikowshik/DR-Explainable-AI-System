@@ -268,15 +268,15 @@ Then display them in README like this:
 
 ## Output
 
-![Outout 1](Outout1.png)
+![Outout 1](Output1.png)
 
-![Outout 2](Outout2.png)
+![Outout 2](Output2.png)
 
-![Outout 3](Outout3.png)
+![Outout 3](Output3.png)
 
-![Outout 4](Outout4.png)
+![Outout 4](Output4.png)
 
-![Outout 5](Outout5.png)
+![Outout 5](Output5.png)
 
 
 The system provides:
