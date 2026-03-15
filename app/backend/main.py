@@ -85,6 +85,8 @@ def send_report(data: dict = Body(...)):
     send_email(email, pdf_path, password)
 
     return {"status": "email_sent"}
+    
+app.mount("/", StaticFiles(directory="app/frontend", html=True), name="frontend")
 
 if __name__ == "__main__":
     import uvicorn
