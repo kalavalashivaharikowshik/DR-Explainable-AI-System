@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, Form, Body
+from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import shutil
@@ -7,17 +7,13 @@ import os
 from src.inference.pipeline import run_full_analysis
 from src.email_service.send_email import send_email
 
+
 app = FastAPI()
 
-# Ensure required directories exist
-os.makedirs("outputs", exist_ok=True)
-os.makedirs("data", exist_ok=True)
-
-# Static folders
 app.mount("/outputs", StaticFiles(directory="outputs"), name="outputs")
 app.mount("/data", StaticFiles(directory="data"), name="data")
+app.mount("/static", StaticFiles(directory="app/frontend"), name="static")
 
-# Upload folder
 UPLOAD_DIR = "app/uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
@@ -29,11 +25,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-@app.get("/")
-def home():
-    return {"message": "DR Explainable AI System API running"}
 
 
 @app.post("/analyze")
@@ -60,7 +51,6 @@ async def analyze_retina(
 
     return results
 
-
 @app.get("/reference/{folder_id}")
 def get_reference_images(folder_id: int):
 
@@ -68,12 +58,14 @@ def get_reference_images(folder_id: int):
 
     images = []
 
-    if os.path.exists(folder):
-        for file in os.listdir(folder):
-            images.append(f"/data/reference_images/{folder_id}/{file}")
+    for file in os.listdir(folder):
+
+        images.append(f"/data/reference_images/{folder_id}/{file}")
 
     return {"images": images}
 
+from fastapi import Body
+from src.email_service.send_email import send_email
 
 @app.post("/send-report")
 def send_report(data: dict = Body(...)):
@@ -85,12 +77,9 @@ def send_report(data: dict = Body(...)):
     send_email(email, pdf_path, password)
 
     return {"status": "email_sent"}
-    
-app.mount("/", StaticFiles(directory="app/frontend", html=True), name="frontend")
 
-if __name__ == "__main__":
-    import uvicorn
-    import os
+from fastapi.responses import FileResponse
 
-    port = int(os.environ.get("PORT", 10000))
-    uvicorn.run("app.backend.main:app", host="0.0.0.0", port=port)
+@app.get("/")
+def home():
+    return FileResponse("app/frontend/index.html")
