@@ -264,7 +264,7 @@ Then display them in README like this:
 
 ## System Dashboard
 
-![Dashboard](docs/images/dashboard.png)
+![Dashboard](dashboard.png)
 
 ## GradCAM Heatmap
 
