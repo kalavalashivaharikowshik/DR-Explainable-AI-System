@@ -85,3 +85,10 @@ def send_report(data: dict = Body(...)):
     send_email(email, pdf_path, password)
 
     return {"status": "email_sent"}
+
+if __name__ == "__main__":
+    import uvicorn
+    import os
+
+    port = int(os.environ.get("PORT", 10000))
+    uvicorn.run("app.backend.main:app", host="0.0.0.0", port=port)
