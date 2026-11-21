@@ -109,7 +109,8 @@ def main():
 
     data, headers = multipart("../../evil.py", b"print(1)")
     status, _, _ = request("/api/analyze", data, headers)
-    check("rejects unsafe file type / path", status == 400, f"HTTP {status}")
+    # 400 = rejected by the app; 403 = blocked even earlier by the host's firewall (e.g. Render)
+    check("rejects unsafe file type / path", status in (400, 403), f"HTTP {status}")
 
     status, _, _ = request("/send-report", json.dumps({"email": "a@b.co", "pdf_path": "/etc/passwd"}).encode(),
                            {"Content-Type": "application/json"})
