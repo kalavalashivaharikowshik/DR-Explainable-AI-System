@@ -26,26 +26,33 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check token
+        id: token
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           if [ -z "$HF_TOKEN" ]; then
-            echo "::error::HF_TOKEN secret is not set. Add it under Settings > Secrets and variables > Actions."
-            exit 1
+            echo "::notice::Skipping deployment: add the HF_TOKEN secret under Settings > Secrets and variables > Actions."
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+        if: steps.token.outputs.ok == 'true'
         with:
           lfs: true
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
+        if: steps.token.outputs.ok == 'true'
         with:
           python-version: "3.12"
 
-      - run: pip install "huggingface_hub>=0.24"
+      - if: steps.token.outputs.ok == 'true'
+        run: pip install "huggingface_hub>=0.24"
 
       - name: Upload to Space
+        if: steps.token.outputs.ok == 'true'
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           SMTP_USER: ${{ secrets.SMTP_USER }}
