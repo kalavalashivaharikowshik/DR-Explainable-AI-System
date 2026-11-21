@@ -1,6 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+.env
+*.env
+
+# Datasets (large / licensed) - only reference_images is optional local content
 dr_unified_v2/
 datasets/
 data/
+
+# Runtime output (analysis results contain patient images)
+outputs/
+app/uploads/
+
+# Model checkpoints other than the shipped one
 *.pt
 *.h5
-__pycache__/
+models/trained/*.pth
+!models/trained/best_model.pth
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
