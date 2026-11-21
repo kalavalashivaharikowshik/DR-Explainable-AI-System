@@ -18,10 +18,65 @@ jobs:
           python-version: "3.12"
           cache: pip
 
-      - name: Install dependencies (CPU PyTorch)
+      - name: Install dependencies (CPU PyTorch for parity tests)
         run: |
           pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision
           pip install -r requirements-dev.txt
 
       - name: Run tests
         run: pytest
+
+  docker:
+    # Builds the production image and runs it with the same 512 MB limit as Render's free tier.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          lfs: false   # proves the image fetches the model itself when only LFS pointers are present
+
+      - name: Build image
+        run: docker build -t dr-xai .
+
+      - name: Run with 512 MB memory limit
+        run: |
+          docker run -d --name app -m 512m --memory-swap 512m -p 10000:10000 dr-xai
+          for i in $(seq 1 60); do
+            curl -sf http://localhost:10000/api/health && break
+            sleep 2
+          done
+          curl -sf http://localhost:10000/api/health | grep '"backend":"onnx"'
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - run: pip install numpy opencv-python-headless
+
+      - name: Analyze a synthetic retina image
+        run: |
+          python - <<'EOF'
+          import json, subprocess, urllib.request, uuid
+          import numpy as np, cv2
+          img = np.zeros((1200, 1400, 3), np.uint8)
+          cv2.circle(img, (700, 600), 560, (40, 90, 200), -1)
+          cv2.circle(img, (950, 600), 60, (180, 220, 250), -1)
+          ok, buf = cv2.imencode(".jpg", img)
+          boundary = uuid.uuid4().hex
+          body = (f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"eye.jpg\"\r\n"
+                  f"Content-Type: image/jpeg\r\n\r\n").encode() + buf.tobytes() + f"\r\n--{boundary}--\r\n".encode()
+          req = urllib.request.Request("http://localhost:10000/api/analyze", data=body,
+                                       headers={"Content-Type": f"multipart/form-data; boundary={boundary}"})
+          for _ in range(3):
+              data = json.load(urllib.request.urlopen(req, timeout=120))
+              print(data["prediction"], data["quality"])
+          pdf = urllib.request.urlopen("http://localhost:10000" + data["report_url"]).read()
+          assert pdf.startswith(b"%PDF")
+          EOF
+        shell: bash
+
+      - name: Memory usage
+        if: always()
+        run: |
+          docker stats --no-stream app
+          test "$(docker inspect -f '{{.State.OOMKilled}}' app)" = "false"
+          docker logs app | tail -20

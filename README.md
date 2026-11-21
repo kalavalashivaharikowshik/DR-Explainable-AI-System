@@ -22,7 +22,7 @@ and whether the photograph is good enough to trust. Results can be exported as a
 - [Features](#-features)
 - [How it works](#-how-it-works)
 - [Quick start](#-quick-start)
-- [Deploy to Hugging Face Spaces](#-deploy-to-hugging-face-spaces)
+- [Deploy for free on Render](#-deploy-for-free-on-render)
 - [Configuration](#-configuration)
 - [Training your own model](#-training-your-own-model)
 - [Project structure](#-project-structure)
@@ -74,6 +74,8 @@ Upload ─► Preprocess ─► EfficientNet-B3 ─► Grad-CAM (one pass) ─�
   Already-preprocessed images are detected automatically (or chosen manually in the UI).
 * **One model pass.** Prediction and Grad-CAM come from a single forward/backward pass; every
   explanation reuses the same raw attention map, so all panels are consistent with each other.
+* **Light serving.** The web server runs the exported ONNX model; Grad-CAM is computed exactly from
+  the last feature map and classifier weights, so no PyTorch is needed in production.
 * **Model:** EfficientNet-B3 (ImageNet initialisation) fine-tuned on a unified APTOS, EyePACS and
   Messidor dataset.
 
@@ -99,32 +101,33 @@ Open <http://127.0.0.1:8000>.
 
 ```bash
 docker build -t dr-xai .
-docker run -p 7860:7860 dr-xai          # open http://localhost:7860
+docker run -p 10000:10000 dr-xai        # open http://localhost:10000
 ```
 
 **Run the tests**
 
 ```bash
-pip install -r requirements-dev.txt
+pip install -r requirements-dev.txt     # adds PyTorch, used for training and parity tests
 pytest
 ```
 
-## ☁ Deploy to Hugging Face Spaces
+## ☁ Deploy for free on Render
 
-The repository deploys itself to a free Hugging Face Space (16 GB RAM, CPU) whenever tests pass
-on `main` (`.github/workflows/deploy-hf.yml`).
+The production image runs the model with **ONNX Runtime** instead of PyTorch, so it needs only
+about 350 MB of RAM and fits Render's free tier (512 MB, no credit card). Predictions and Grad-CAM
+are identical to PyTorch; this is checked by `tests/test_model_integration.py`.
 
-1. Create a free account at [huggingface.co](https://huggingface.co).
-2. Create an access token with **Write** permission: *Settings → Access Tokens → Create new token*.
-3. In this GitHub repo open *Settings → Secrets and variables → Actions* and add:
-   * secret **`HF_TOKEN`**: the token from step 2 (required)
-   * secrets **`SMTP_USER`** / **`SMTP_PASSWORD`**: Gmail address and a Gmail
-     [app password](https://myaccount.google.com/apppasswords), to enable email (optional)
-   * variable **`HF_SPACE_NAME`**: Space name (optional, default `dr-explainable-ai-system`)
-4. Open *Actions → Deploy to Hugging Face Spaces → Run workflow* (or push to `main`).
+1. Sign in at [render.com](https://render.com) with your GitHub account.
+2. Open [dashboard.render.com/blueprints](https://dashboard.render.com/blueprints) and click **New Blueprint Instance**.
+3. Connect this repository and click **Apply**. Render reads `render.yaml` and builds the `Dockerfile`.
+4. Optional, for email reports: in the service's **Environment** tab set `SMTP_USER` (Gmail address)
+   and `SMTP_PASSWORD` (a Gmail [app password](https://myaccount.google.com/apppasswords)).
 
-The app will be live at `https://<hf-username>-dr-explainable-ai-system.hf.space` after the
-first build (about 5–10 minutes).
+The site is served at `https://dr-explainable-ai.onrender.com` (or the name Render shows). Each push
+to `main` redeploys automatically after CI passes. Free services sleep after 15 minutes without
+visitors, and the first request after that takes about a minute.
+
+The same image runs on any Docker host (Google Cloud Run, Koyeb, a VPS, or a Hugging Face Docker Space).
 
 ## 🔧 Configuration
 
@@ -132,7 +135,9 @@ All settings are environment variables (see `src/config/config.py`):
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `DR_MODEL_PATH` | `models/trained/best_model.pth` | Trained weights |
+| `DR_BACKEND` | `onnx` if the ONNX file exists, else `torch` | Inference engine |
+| `DR_ONNX_MODEL_PATH` | `models/trained/best_model.onnx` | Serving model (ONNX Runtime) |
+| `DR_MODEL_PATH` | `models/trained/best_model.pth` | PyTorch weights (training / torch backend) |
 | `DR_RESULTS_DIR` | `outputs/results` | Where analysis images and reports are written |
 | `DR_RESULT_TTL_HOURS` | `24` | Results are deleted after this many hours |
 | `DR_MAX_UPLOAD_MB` | `15` | Maximum upload size |
@@ -157,6 +162,9 @@ python -m src.models.classification.train --epochs 30
 
 # 3. evaluate on the test split (confusion matrix, per-class report, QWK)
 python -m src.models.classification.evaluate
+
+# 4. export the light-weight serving model (best_model.onnx + classifier head)
+python scripts/export_onnx.py
 ```
 
 ## 📁 Project structure
@@ -172,17 +180,18 @@ DR-Explainable-AI-System
 │   ├── models/
 │   │   ├── classification/        EfficientNet-B3, train.py, evaluate.py
 │   │   └── loaders/               ImageFolder data loaders
-│   ├── inference/                 predict.py (load-once predictor), pipeline.py
+│   ├── inference/                 predict.py (ONNX / PyTorch predictor), pipeline.py
 │   ├── explainability/            Grad-CAM, evidence map, focus consistency, regions, spread
 │   ├── visualization/             pseudo-3D view, reference comparison
 │   ├── quality_assessment/        image quality overlay and score
 │   ├── reporting/                 PDF generation and AES-256 encryption
 │   ├── email_service/             SMTP delivery
 │   └── utils/                     ids, cleanup, logging, metrics
-├── models/trained/best_model.pth  trained weights (Git LFS)
+├── models/trained/                best_model.pth (PyTorch) + best_model.onnx (serving), Git LFS
 ├── tests/                         pytest suite (API, security, preprocessing, explainability)
-├── scripts/deploy_hf_space.py     Hugging Face deployment helper
-├── Dockerfile
+├── scripts/                       export_onnx.py, fetch_model.py
+├── Dockerfile                     light ONNX Runtime image (~350 MB RAM)
+├── render.yaml                    Render free-tier blueprint
 └── .github/workflows/             CI and deployment
 ```
 

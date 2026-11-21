@@ -10,3 +10,5 @@ outputs
 app/uploads
 docs
 tests
+models/trained/*.pth
+scripts/__pycache__

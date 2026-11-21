@@ -1,0 +1,18 @@
+# Render Blueprint - free web service (512 MB RAM, sleeps after 15 idle minutes).
+# Deploy: https://dashboard.render.com/blueprints -> New Blueprint Instance -> pick this repo.
+services:
+  - type: web
+    name: dr-explainable-ai
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: DR_RESULT_TTL_HOURS
+        value: "6"
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
