@@ -1,12 +1,16 @@
 import os
+
+import torch
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
 
 # ==============================
 # SETTINGS
 # ==============================
-DATA_DIR = "data/processed"
-IMG_SIZE = 300
+from src.config.config import IMAGENET_MEAN, IMAGENET_STD, MODEL_INPUT_SIZE
+
+DATA_DIR = os.environ.get("DR_DATA_DIR", "data/processed")
+IMG_SIZE = MODEL_INPUT_SIZE
 BATCH_SIZE = 16
 
 # ==============================
@@ -18,15 +22,13 @@ train_transforms = transforms.Compose([
     transforms.RandomRotation(15),
     transforms.RandomResizedCrop(IMG_SIZE, scale=(0.9, 1.0)),
     transforms.ToTensor(),
-    transforms.Normalize([0.485, 0.456, 0.406],
-                         [0.229, 0.224, 0.225])
+    transforms.Normalize(IMAGENET_MEAN, IMAGENET_STD)
 ])
 
 val_test_transforms = transforms.Compose([
     transforms.Resize((IMG_SIZE, IMG_SIZE)),
     transforms.ToTensor(),
-    transforms.Normalize([0.485, 0.456, 0.406],
-                         [0.229, 0.224, 0.225])
+    transforms.Normalize(IMAGENET_MEAN, IMAGENET_STD)
 ])
 
 # ==============================
@@ -55,7 +57,7 @@ def get_dataloaders():
         batch_size=BATCH_SIZE,
         shuffle=True,
         num_workers=0,
-        pin_memory=True
+        pin_memory=torch.cuda.is_available()
     )
 
     val_loader = DataLoader(
@@ -63,7 +65,7 @@ def get_dataloaders():
         batch_size=BATCH_SIZE,
         shuffle=False,
         num_workers=0,
-        pin_memory=True
+        pin_memory=torch.cuda.is_available()
     )
 
     test_loader = DataLoader(
@@ -71,7 +73,7 @@ def get_dataloaders():
         batch_size=BATCH_SIZE,
         shuffle=False,
         num_workers=0,
-        pin_memory=True
+        pin_memory=torch.cuda.is_available()
     )
 
     return train_loader, val_loader, test_loader

@@ -1,144 +1,79 @@
-import os
+"""Grad-CAM (Selvaraju et al., 2017) for the EfficientNet classifier.
+
+Returns the *raw* class-activation map (float32 in [0, 1]) so every downstream
+explainability module works on real attention values, not on the colours of a
+rendered overlay.
+"""
+
 import cv2
-import torch
 import numpy as np
-from PIL import Image
-from torchvision import transforms
+import torch
 
-from src.models.classification.efficientnet_model import get_model
-
-# ==============================
-# SETTINGS
-# ==============================
-
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-MODEL_PATH = "models/trained/best_model.pth"
-
-OUTPUT_DIR = "outputs/heatmaps"
-
-CLASS_NAMES = [
-    "No DR",
-    "Mild",
-    "Moderate",
-    "Severe",
-    "Proliferative"
-]
-
-os.makedirs(OUTPUT_DIR, exist_ok=True)
-
-# ==============================
-# LOAD MODEL
-# ==============================
-
-model = get_model().to(DEVICE)
-model.load_state_dict(torch.load(MODEL_PATH, weights_only=True))
-model.eval()
-
-# EfficientNet final convolution layer
-target_layer = model.features[-1]
-
-# ==============================
-# TRANSFORM
-# ==============================
-
-transform = transforms.Compose([
-    transforms.Resize((300, 300)),
-    transforms.ToTensor(),
-    transforms.Normalize(
-        [0.485, 0.456, 0.406],
-        [0.229, 0.224, 0.225]
-    )
-])
-
-# ==============================
-# GRADCAM CLASS
-# ==============================
 
 class GradCAM:
 
-    def __init__(self, model, target_layer):
-
+    def __init__(self, model: torch.nn.Module, target_layer: torch.nn.Module):
         self.model = model
-        self.target_layer = target_layer
+        self._activations = None
+        self._gradients = None
+        target_layer.register_forward_hook(self._save_activation)
 
-        self.gradients = None
-        self.activations = None
+    def _save_activation(self, module, inputs, output):
+        self._activations = output
+        if output.requires_grad:
+            # tensor hook: gradient of the score w.r.t. this layer's output
+            output.register_hook(self._save_gradient)
 
-        self.target_layer.register_forward_hook(self.save_activation)
-        self.target_layer.register_backward_hook(self.save_gradient)
+    def _save_gradient(self, grad):
+        self._gradients = grad
 
-    def save_activation(self, module, input, output):
-        self.activations = output
+    def generate(self, image_tensor: torch.Tensor, class_idx: int = None):
+        """Run one forward + backward pass.
 
-    def save_gradient(self, module, grad_input, grad_output):
-        self.gradients = grad_output[0]
+        Returns (probabilities [num_classes], class_idx, cam HxW float32 in [0,1]).
+        """
+        self.model.zero_grad(set_to_none=True)
 
-    def generate(self, image_tensor, class_idx=None):
+        with torch.enable_grad():
+            image_tensor = image_tensor.requires_grad_(False)
+            logits = self.model(image_tensor)
+            probs = torch.softmax(logits, dim=1)[0].detach().cpu().numpy()
 
-        output = self.model(image_tensor)
+            if class_idx is None:
+                class_idx = int(np.argmax(probs))
 
-        if class_idx is None:
-            class_idx = output.argmax(dim=1).item()
+            logits[0, class_idx].backward()
 
-        self.model.zero_grad()
+        activations = self._activations.detach()[0]          # C x h x w
+        gradients = self._gradients.detach()[0]              # C x h x w
+        weights = gradients.mean(dim=(1, 2))                 # C
 
-        output[0, class_idx].backward()
+        cam = torch.relu((weights[:, None, None] * activations).sum(dim=0))
+        cam = cam.cpu().numpy().astype(np.float32)
 
-        gradients = self.gradients
-        activations = self.activations
+        peak = float(cam.max())
+        if peak > 1e-8:
+            cam /= peak
+        else:  # no positive evidence for this class -> empty map instead of NaNs
+            cam = np.zeros_like(cam)
 
-        pooled_gradients = torch.mean(gradients, dim=[0, 2, 3])
+        self._activations = self._gradients = None
+        self.model.zero_grad(set_to_none=True)
 
-        activations = activations.squeeze(0)
-
-        for i in range(pooled_gradients.shape[0]):
-            activations[i, :, :] *= pooled_gradients[i]
-
-        heatmap = torch.mean(activations, dim=0).cpu().detach().numpy()
-
-        heatmap = np.maximum(heatmap, 0)
-
-        heatmap /= np.max(heatmap)
-
-        return heatmap, class_idx
+        return probs, class_idx, cam
 
 
-gradcam = GradCAM(model, target_layer)
+def upsample_cam(cam: np.ndarray, size: int, fov_mask: np.ndarray = None) -> np.ndarray:
+    """Resize a low-resolution CAM to the display size and zero it outside the retina."""
+    big = cv2.resize(cam, (size, size), interpolation=cv2.INTER_CUBIC)
+    big = np.clip(big, 0, None)
+    if fov_mask is not None:
+        big = big * fov_mask
+    peak = big.max()
+    return (big / peak).astype(np.float32) if peak > 1e-8 else np.zeros_like(big, dtype=np.float32)
 
-# ==============================
-# MAIN FUNCTION
-# ==============================
 
-def run_gradcam(image_path):
-
-    image = Image.open(image_path).convert("RGB")
-
-    img_tensor = transform(image).unsqueeze(0).to(DEVICE)
-
-    heatmap, class_idx = gradcam.generate(img_tensor)
-
-    prediction = CLASS_NAMES[class_idx]
-
-    # Load original image
-    original = cv2.imread(image_path)
-
-    heatmap = cv2.resize(heatmap, (original.shape[1], original.shape[0]))
-
-    heatmap = np.uint8(255 * heatmap)
-
-    heatmap = cv2.applyColorMap(heatmap, cv2.COLORMAP_JET)
-
-    overlay = cv2.addWeighted(original, 0.6, heatmap, 0.4, 0)
-
-    # Save result
-    filename = os.path.basename(image_path)
-
-    output_path = os.path.join(OUTPUT_DIR, f"gradcam_{filename}")
-
-    cv2.imwrite(output_path, overlay)
-
-    return {
-        "prediction": prediction,
-        "heatmap_path": output_path
-    }
+def render_heatmap_overlay(image_bgr: np.ndarray, cam: np.ndarray, alpha: float = 0.45) -> np.ndarray:
+    """Colour the CAM with the JET palette (red = strongest) and blend it onto the image."""
+    heat = cv2.applyColorMap(np.uint8(255 * cam), cv2.COLORMAP_JET)
+    return cv2.addWeighted(image_bgr, 1 - alpha, heat, alpha, 0)

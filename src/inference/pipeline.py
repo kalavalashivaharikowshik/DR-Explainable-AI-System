@@ -1,116 +1,140 @@
-from src.models.classification.efficientnet_model import get_model
-import torch
-from torchvision import transforms
-from PIL import Image
+"""End-to-end analysis of one fundus image.
+
+The model runs ONCE (prediction + Grad-CAM in a single pass); every
+explainability module then reuses the same attention map and lesion candidates.
+"""
+
 import os
 
-from src.explainability.gradcam import run_gradcam
-from src.explainability.layered_evidence_map import generate_layered_evidence
-from src.explainability.focus_consistency import generate_focus_consistency
-from src.explainability.region_importance_map import generate_region_importance
-from src.explainability.saliency_evolution import generate_saliency_evolution
-from src.visualization.comparison_panel import get_reference_images
-from src.models.classification.efficientnet_model import get_model
-from src.visualization.pseudo3d_abstraction import generate_pseudo3d
-from src.reporting.generate_pdf import generate_pdf_report
+import cv2
+import numpy as np
+
+from src.config.config import CLASS_NAMES, DISPLAY_SIZE, MODEL_INPUT_SIZE, RESULTS_DIR
+from src.explainability.focus_consistency import compute_focus_consistency, generate_focus_consistency
+from src.explainability.gradcam import render_heatmap_overlay, upsample_cam
+from src.explainability.layered_evidence_map import detect_lesions, generate_layered_evidence, locate_optic_disc
+from src.explainability.region_importance_map import compute_region_importance, generate_region_importance
+from src.explainability.saliency_evolution import compute_attention_spread, generate_saliency_evolution
+from src.inference.predict import get_predictor
+from src.preprocessing.resize_normalize import prepare_image
+from src.quality_assessment.retinal_quality_overlay import assess_quality, generate_quality_overlay
 from src.reporting.encrypt_pdf import encrypt_pdf
-from src.email_service.send_email import send_email
-from src.quality_assessment.retinal_quality_overlay import generate_quality_overlay
+from src.reporting.generate_pdf import generate_pdf_report
+from src.utils.helpers import new_result_id
+from src.visualization.comparison_panel import get_reference_images
+from src.visualization.pseudo3d_abstraction import generate_pseudo3d
 
-def run_full_analysis(image_path):
+# file name -> title, in display order
+MAPS = {
+    "original": "Input Retina",
+    "gradcam": "Grad-CAM Attention",
+    "evidence": "Layered Evidence Map",
+    "consistency": "Focus Consistency",
+    "saliency": "Attention Spread",
+    "regions": "Region Importance",
+    "pseudo3d": "Pseudo-3D Layered View",
+    "quality": "Image Quality",
+}
 
-    results = {}
 
-    # ---------------------------
-    # GradCAM
-    # ---------------------------
-    gradcam_result = run_gradcam(image_path)
+class InvalidImage(ValueError):
+    pass
 
-    results["prediction"] = gradcam_result["prediction"]
-    results["gradcam_heatmap"] = gradcam_result["heatmap_path"]
 
-    # ---------------------------
-    # Layered Evidence Map
-    # ---------------------------
-    evidence_result = generate_layered_evidence(image_path)
+def decode_image(data: bytes) -> np.ndarray:
+    array = np.frombuffer(data, dtype=np.uint8)
+    img = cv2.imdecode(array, cv2.IMREAD_COLOR)
+    if img is None:
+        raise InvalidImage("The file is not a readable image.")
+    h, w = img.shape[:2]
+    if min(h, w) < 128:
+        raise InvalidImage("Image is too small (minimum 128 x 128 pixels).")
+    return img
 
-    results["evidence_map"] = evidence_result["evidence_map"]
 
-    # ---------------------------
-    # Focus Consistency
-    # ---------------------------
-    consistency_result = generate_focus_consistency(image_path)
+def run_full_analysis(image, already_preprocessed=None, results_dir: str = RESULTS_DIR,
+                      predictor=None, include_report: bool = True):
+    """image: path, raw bytes or a BGR numpy array. Returns a JSON-serialisable dict."""
+    if isinstance(image, (bytes, bytearray)):
+        img = decode_image(bytes(image))
+    elif isinstance(image, str):
+        img = cv2.imread(image)
+        if img is None:
+            raise InvalidImage(f"Could not read image: {image}")
+    else:
+        img = image
 
-    results["consistency_score"] = consistency_result["consistency_score"]
-    results["consistency_label"] = consistency_result["consistency_label"]
-    results["consistency_image"] = consistency_result["output_path"]
+    result_id = new_result_id()
+    out_dir = os.path.join(results_dir, result_id)
+    os.makedirs(out_dir, exist_ok=True)
 
-    # ---------------------------
-    # Region Importance
-    # ---------------------------
-    region_result = generate_region_importance(image_path)
+    # ---------------- preprocessing (same as training) ----------------
+    prep = prepare_image(img, MODEL_INPUT_SIZE, DISPLAY_SIZE, already_preprocessed)
 
-    results["macula_importance"] = region_result["macula_importance"]
-    results["mid_importance"] = region_result["mid_importance"]
-    results["peripheral_importance"] = region_result["peripheral_importance"]
-    results["region_map"] = region_result["output_path"]
+    # ---------------- model: prediction + Grad-CAM ----------------
+    predictor = predictor or get_predictor()
+    pred = predictor.predict(prep.model_input)
+    cam = upsample_cam(pred["cam"], DISPLAY_SIZE, prep.fov_mask)
 
-    # ---------------------------
-    # Saliency Evolution
-    # ---------------------------
-    saliency_result = generate_saliency_evolution(image_path)
+    # ---------------- shared evidence ----------------
+    optic_disc = locate_optic_disc(prep.enhanced, prep.fov_mask)
+    lesions = detect_lesions(prep.enhanced, prep.fov_mask, optic_disc)
 
-    results["saliency_map"] = saliency_result["output_path"]
+    consistency_score, consistency_label = compute_focus_consistency(cam, lesions, prep.fov_mask)
+    region = compute_region_importance(cam, prep.fov_mask)
+    spread_fraction, attention_label = compute_attention_spread(cam, prep.fov_mask)
+    quality, quality_masks = assess_quality(prep.display, prep.fov_mask)
 
-    references = get_reference_images(results["prediction"])
+    # ---------------- images ----------------
+    images = {
+        "original": prep.display,
+        "gradcam": render_heatmap_overlay(prep.display, cam),
+        "evidence": generate_layered_evidence(prep.display, cam, lesions, optic_disc),
+        "consistency": generate_focus_consistency(prep.display, cam, lesions, prep.fov_mask,
+                                                  consistency_score, consistency_label),
+        "saliency": generate_saliency_evolution(prep.display, cam, lesions, spread_fraction, attention_label),
+        "regions": generate_region_importance(prep.display, cam, prep.fov_mask, region),
+        "pseudo3d": generate_pseudo3d(prep.display, cam, lesions, prep.fov_mask),
+        "quality": generate_quality_overlay(prep.display, prep.fov_mask, quality, quality_masks),
+    }
+    paths = {}
+    for key, image_bgr in images.items():
+        path = os.path.join(out_dir, f"{key}.jpg")
+        cv2.imwrite(path, image_bgr, [cv2.IMWRITE_JPEG_QUALITY, 92])
+        paths[key] = path
 
-    results["reference_same"] = references["same_class_example"]
-    results["reference_severe"] = references["severe_example"]
+    results = {
+        "result_id": result_id,
+        "prediction": pred["prediction"],
+        "class_index": pred["class_index"],
+        "classes": CLASS_NAMES,
+        "probabilities": pred["probabilities"],
+        "confidence": max(pred["probabilities"]),
+        "already_preprocessed": prep.already_preprocessed,
+        "consistency_score": consistency_score,
+        "consistency_label": consistency_label,
+        "attention_spread": spread_fraction,
+        "attention_label": attention_label,
+        "region_importance": region,
+        "quality": quality,
+        "lesion_counts": {
+            "bright": sum(1 for les in lesions if les["kind"] == "bright"),
+            "dark": sum(1 for les in lesions if les["kind"] == "dark"),
+        },
+        "images": {key: f"/api/results/{result_id}/{key}.jpg" for key in paths},
+        "image_titles": MAPS,
+        "references": get_reference_images(pred["prediction"]),
+    }
 
-    prediction, probs = get_prediction_with_probs(image_path)
-
-    results["prediction"] = prediction
-    results["probabilities"] = probs
-
-    pseudo3d = generate_pseudo3d(image_path)
-
-    results["pseudo3d_map"] = pseudo3d["pseudo3d_map"]
-
-    report_path = generate_pdf_report(image_path, results)
-
-    encrypted_pdf, password = encrypt_pdf(report_path)
-
-    results["report_pdf"] = encrypted_pdf
-    results["pdf_password"] = password
-
-    quality = generate_quality_overlay(image_path)
-
-    results["quality_overlay"] = quality["quality_map"]
+    # ---------------- encrypted PDF report ----------------
+    if include_report:
+        pdf = generate_pdf_report(out_dir, results, {MAPS[k]: paths[k] for k in MAPS})
+        _, password = encrypt_pdf(pdf)
+        results["report_url"] = f"/api/reports/{result_id}/report.pdf"
+        # returned once to the person who ran the analysis; never stored on the server
+        results["report_password"] = password
+    else:
+        results["report_url"] = None
+        results["report_password"] = None
 
     return results
-
-def get_prediction_with_probs(image_path):
-
-    model = get_model()
-    model.load_state_dict(torch.load("models/trained/best_model.pth"))
-    model.eval()
-
-    transform = transforms.Compose([
-        transforms.Resize((300,300)),
-        transforms.ToTensor(),
-        transforms.Normalize([0.485,0.456,0.406],
-                             [0.229,0.224,0.225])
-    ])
-
-    img = Image.open(image_path).convert("RGB")
-    img = transform(img).unsqueeze(0)
-
-    with torch.no_grad():
-        output = model(img)
-        probs = torch.softmax(output,dim=1)[0].tolist()
-
-    classes = ["No DR","Mild","Moderate","Severe","Proliferative"]
-
-    prediction = classes[probs.index(max(probs))]
-
-    return prediction, probs

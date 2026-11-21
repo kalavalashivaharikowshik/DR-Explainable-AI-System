@@ -1,110 +1,57 @@
-import os
+"""Share of Grad-CAM attention falling in central / mid / peripheral retina.
+
+Zones are concentric rings scaled to the retina's radius (assumes a
+macula-centred photograph, the standard screening field):
+    central     0   - 0.25 R   (macula / posterior pole)
+    mid         0.25 - 0.6 R
+    peripheral  0.6 - 1.0 R
+"""
+
 import cv2
 import numpy as np
 
-from src.explainability.gradcam import run_gradcam
-
-OUTPUT_DIR = "outputs/region_importance"
-os.makedirs(OUTPUT_DIR, exist_ok=True)
+ZONES = (("central", 0.25), ("mid", 0.60), ("peripheral", 1.0))
+ZONE_COLORS = {"central": (255, 120, 0), "mid": (0, 220, 0), "peripheral": (0, 220, 255)}
 
 
-def compute_region_importance(heatmap):
-
-    h, w = heatmap.shape
-
-    center = (w // 2, h // 2)
-
-    macula_r = 80
-    mid_r = 160
-
-    macula_score = 0
-    mid_score = 0
-    peripheral_score = 0
-
-    total = 0
-
-    for y in range(h):
-        for x in range(w):
-
-            value = heatmap[y, x]
-
-            if value <= 0:
-                continue
-
-            dist = np.sqrt((x-center[0])**2 + (y-center[1])**2)
-
-            if dist <= macula_r:
-                macula_score += value
-
-            elif dist <= mid_r:
-                mid_score += value
-
-            else:
-                peripheral_score += value
-
-            total += value
-
-    if total == 0:
-        return 0,0,0
-
-    macula = macula_score / total
-    mid = mid_score / total
-    peripheral = peripheral_score / total
-
-    return macula, mid, peripheral
+def fov_geometry(fov_mask: np.ndarray):
+    ys, xs = np.nonzero(fov_mask)
+    if len(xs) == 0:
+        h, w = fov_mask.shape
+        return (w // 2, h // 2), min(h, w) // 2
+    cx, cy = xs.mean(), ys.mean()
+    radius = np.sqrt(len(xs) / np.pi)          # radius of a disc with the same area
+    return (int(cx), int(cy)), int(radius)
 
 
-def generate_region_importance(image_path):
+def compute_region_importance(cam: np.ndarray, fov_mask: np.ndarray):
+    """Vectorised. Returns dict zone -> fraction (sums to 1, or all 0 if no attention)."""
+    (cx, cy), radius = fov_geometry(fov_mask)
+    h, w = cam.shape
+    yy, xx = np.mgrid[:h, :w]
+    dist = np.sqrt((xx - cx) ** 2 + (yy - cy) ** 2) / max(radius, 1)
 
-    gradcam_result = run_gradcam(image_path)
+    weights = cam * fov_mask
+    total = float(weights.sum())
+    result = {}
+    inner = 0.0
+    for name, outer in ZONES:
+        ring = (dist >= inner) & (dist < outer) if name != "peripheral" else (dist >= inner)
+        result[name] = float(weights[ring].sum()) / total if total > 0 else 0.0
+        inner = outer
+    return result
 
-    heatmap_path = gradcam_result["heatmap_path"]
-    prediction = gradcam_result["prediction"]
 
-    original = cv2.imread(image_path)
+def generate_region_importance(display, cam, fov_mask, importance):
+    out = display.copy()
+    (cx, cy), radius = fov_geometry(fov_mask)
 
-    heatmap_img = cv2.imread(heatmap_path)
+    for name, outer in ZONES[:-1]:
+        cv2.circle(out, (cx, cy), int(outer * radius), ZONE_COLORS[name], 2, cv2.LINE_AA)
+    cv2.circle(out, (cx, cy), radius, ZONE_COLORS["peripheral"], 2, cv2.LINE_AA)
 
-    gray = cv2.cvtColor(heatmap_img, cv2.COLOR_BGR2GRAY) / 255.0
-
-    macula, mid, peripheral = compute_region_importance(gray)
-
-    h, w, _ = original.shape
-    center = (w//2, h//2)
-
-    output = original.copy()
-
-    cv2.circle(output, center, 80, (255,0,0), 2)
-    cv2.circle(output, center, 160, (0,255,0), 2)
-
-    cv2.putText(output, f"Macula: {macula:.2f}",
-                (20,30),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.7,(255,0,0),2)
-
-    cv2.putText(output, f"Mid Retina: {mid:.2f}",
-                (20,60),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.7,(0,255,0),2)
-
-    cv2.putText(output, f"Peripheral: {peripheral:.2f}",
-                (20,90),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.7,(0,255,255),2)
-
-    filename = os.path.basename(image_path)
-
-    output_path = os.path.join(
-        OUTPUT_DIR,
-        f"regions_{filename}"
-    )
-
-    cv2.imwrite(output_path, output)
-
-    return {
-        "prediction": prediction,
-        "macula_importance": macula,
-        "mid_importance": mid,
-        "peripheral_importance": peripheral,
-        "output_path": output_path
-    }
+    cv2.rectangle(out, (0, 0), (215, 82), (20, 20, 20), -1)
+    for i, (name, _) in enumerate(ZONES):
+        cv2.putText(out, f"{name.capitalize()}: {importance[name] * 100:.0f}%", (10, 22 + 25 * i),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, ZONE_COLORS[name], 1, cv2.LINE_AA)
+    return out

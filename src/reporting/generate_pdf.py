@@ -1,70 +1,119 @@
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image
-from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.lib.pagesizes import A4
+"""Clinical-style PDF report (ReportLab)."""
 
 import datetime
 import os
 
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.units import mm
+from reportlab.platypus import (Image, KeepTogether, Paragraph, SimpleDocTemplate, Spacer,
+                                Table, TableStyle)
 
-def generate_pdf_report(image_path, results):
+from src.config.config import CLASS_NAMES, MODEL_NAME
 
-    os.makedirs("outputs/report", exist_ok=True)
+ACCENT = colors.HexColor("#2563eb")
 
-    output_file = "outputs/report/dr_report.pdf"
+
+def _image(path, width):
+    """Image flowable that keeps the original aspect ratio."""
+    img = Image(path)
+    ratio = img.imageHeight / float(img.imageWidth)
+    img.drawWidth = width
+    img.drawHeight = width * ratio
+    return img
+
+
+def _pct(value):
+    return "n/a" if value is None else f"{value * 100:.1f}%"
+
+
+def generate_pdf_report(result_dir: str, results: dict, images: dict) -> str:
+    """images: mapping title -> file path (in display order). Returns the PDF path."""
+    output_file = os.path.join(result_dir, "report.pdf")
 
     styles = getSampleStyleSheet()
+    small = ParagraphStyle("small", parent=styles["Normal"], fontSize=8, textColor=colors.grey)
+    h2 = ParagraphStyle("h2", parent=styles["Heading2"], textColor=ACCENT)
 
-    story = []
+    story = [
+        Paragraph("Diabetic Retinopathy AI Analysis Report", styles["Title"]),
+        Paragraph(
+            f"Report ID: {results['result_id'][:12]} &nbsp;&nbsp;|&nbsp;&nbsp; "
+            f"Generated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')} &nbsp;&nbsp;|&nbsp;&nbsp; "
+            f"Model: {MODEL_NAME}", small),
+        Spacer(1, 8 * mm),
+    ]
 
-    story.append(Paragraph("Diabetic Retinopathy AI Analysis Report", styles['Title']))
+    # ---------------- summary ----------------
+    summary = [
+        ["Predicted grade", results["prediction"]],
+        ["Confidence", _pct(results["confidence"])],
+        ["Image quality", f"{results['quality']['label']} ({results['quality']['score']:.0f}/100)"],
+        ["Focus consistency", f"{results['consistency_label']} ({_pct(results['consistency_score'])})"],
+        ["Attention pattern", results["attention_label"]],
+        ["Lesion candidates", f"{results['lesion_counts']['bright']} bright, {results['lesion_counts']['dark']} dark"],
+    ]
+    t = Table(summary, colWidths=[55 * mm, 105 * mm])
+    t.setStyle(TableStyle([
+        ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+        ("TEXTCOLOR", (1, 0), (1, 0), ACCENT),
+        ("FONTSIZE", (1, 0), (1, 0), 13),
+        ("ROWBACKGROUNDS", (0, 0), (-1, -1), [colors.whitesmoke, colors.white]),
+        ("GRID", (0, 0), (-1, -1), 0.25, colors.lightgrey),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING", (0, 0), (-1, -1), 5), ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+    ]))
+    story += [Paragraph("Summary", h2), t, Spacer(1, 6 * mm)]
 
-    story.append(Spacer(1,20))
+    # ---------------- probabilities ----------------
+    rows = [["Grade", "Probability"]] + [
+        [name, _pct(p)] for name, p in zip(CLASS_NAMES, results["probabilities"])
+    ]
+    pt = Table(rows, colWidths=[55 * mm, 40 * mm])
+    best = 1 + results["class_index"]
+    pt.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), ACCENT), ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("BACKGROUND", (0, best), (-1, best), colors.HexColor("#dbeafe")),
+        ("FONTNAME", (0, best), (-1, best), "Helvetica-Bold"),
+        ("GRID", (0, 0), (-1, -1), 0.25, colors.lightgrey),
+        ("ALIGN", (1, 0), (1, -1), "RIGHT"),
+    ]))
+    region = results["region_importance"]
+    story += [
+        Paragraph("Severity probabilities", h2), pt, Spacer(1, 4 * mm),
+        Paragraph(
+            f"Attention by retinal zone: central {_pct(region['central'])}, "
+            f"mid {_pct(region['mid'])}, peripheral {_pct(region['peripheral'])}.",
+            styles["Normal"]),
+        Spacer(1, 6 * mm),
+    ]
 
-    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    # ---------------- images, two per row ----------------
+    story.append(Paragraph("Visual explanations", h2))
+    items = list(images.items())
+    col_w = 82 * mm
+    for i in range(0, len(items), 2):
+        cells = []
+        for title, path in items[i:i + 2]:
+            cells.append([Paragraph(f"<b>{title}</b>", styles["Normal"]), Spacer(1, 2), _image(path, col_w)])
+        while len(cells) < 2:
+            cells.append("")
+        grid = Table([cells], colWidths=[col_w + 4 * mm] * 2)
+        grid.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
+        story += [KeepTogether(grid), Spacer(1, 4 * mm)]
 
-    story.append(Paragraph(f"Timestamp: {timestamp}", styles['Normal']))
-    story.append(Paragraph(f"Prediction: {results['prediction']}", styles['Normal']))
+    story += [
+        Spacer(1, 6 * mm),
+        Paragraph(
+            "Lesion markers are image-processing candidates, not a trained lesion detector. "
+            "Disclaimer: this report is generated by an AI decision-support research system and must not "
+            "replace diagnosis by a qualified ophthalmologist.", small),
+    ]
 
-    story.append(Spacer(1,20))
-
-    story.append(Paragraph("Uploaded Retina Image", styles['Heading2']))
-    story.append(Image(image_path, width=400, height=300))
-
-    story.append(Spacer(1,20))
-
-    story.append(Paragraph("GradCAM Heatmap", styles['Heading2']))
-    story.append(Image(results["gradcam_heatmap"], width=400, height=300))
-
-    story.append(Spacer(1,20))
-
-    story.append(Paragraph("Evidence Map", styles['Heading2']))
-    story.append(Image(results["evidence_map"], width=400, height=300))
-
-    story.append(Spacer(1,20))
-
-    story.append(Paragraph("Consistency Visualization", styles['Heading2']))
-    story.append(Image(results["consistency_image"], width=400, height=300))
-
-    story.append(Spacer(1,20))
-
-    story.append(Paragraph("Region Importance Map", styles['Heading2']))
-    story.append(Image(results["region_map"], width=400, height=300))
-
-    story.append(Spacer(1,20))
-
-    story.append(Paragraph("Saliency Evolution Map", styles['Heading2']))
-    story.append(Image(results["saliency_map"], width=400, height=300))
-
-    story.append(Spacer(1,30))
-
-    story.append(Paragraph(
-        "Disclaimer: This report is generated by an AI decision-support system and "
-        "should not replace professional medical diagnosis.",
-        styles['Italic']
-    ))
-
-    doc = SimpleDocTemplate(output_file, pagesize=A4)
-
+    doc = SimpleDocTemplate(output_file, pagesize=A4, leftMargin=18 * mm, rightMargin=18 * mm,
+                            topMargin=16 * mm, bottomMargin=16 * mm,
+                            title="DR AI Analysis Report", author="DR Explainable AI System")
     doc.build(story)
-
     return output_file

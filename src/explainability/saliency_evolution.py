@@ -1,126 +1,54 @@
-import os
+"""Attention spread: how concentrated is the model's attention?
+
+We find the smallest share of the retina that contains half of the total
+Grad-CAM attention mass:
+    < 10 % of the retina  -> Focused Attention
+    < 25 %                -> Moderate Spread
+    otherwise             -> Diffuse Attention
+
+The image shows attention iso-contours at 25 / 50 / 75 % of the peak, i.e. how
+attention "evolves" from the broad context to the most decisive spots.
+"""
+
 import cv2
 import numpy as np
 
-from src.explainability.gradcam import run_gradcam
-from src.explainability.layered_evidence_map import detect_lesions
-
-OUTPUT_DIR = "outputs/saliency_evolution"
-os.makedirs(OUTPUT_DIR, exist_ok=True)
+LEVELS = ((0.25, (255, 160, 0)), (0.50, (0, 220, 255)), (0.75, (60, 60, 255)))
 
 
-def compute_attention_behavior(heatmap, lesions):
+def compute_attention_spread(cam: np.ndarray, fov_mask: np.ndarray):
+    values = cam[fov_mask]
+    total = values.sum()
+    if total <= 0:
+        return 1.0, "No Attention"
 
-    spreads = []
+    ordered = np.sort(values)[::-1]
+    cumulative = np.cumsum(ordered)
+    n_half = int(np.searchsorted(cumulative, 0.5 * total)) + 1
+    fraction = n_half / len(values)
 
-    h, w = heatmap.shape
-
-    for x, y, r in lesions:
-
-        center_val = heatmap[y, x]
-
-        spread = 0
-
-        for radius in range(5, 80, 5):
-
-            points = []
-
-            for angle in range(0, 360, 30):
-
-                px = int(x + radius * np.cos(np.radians(angle)))
-                py = int(y + radius * np.sin(np.radians(angle)))
-
-                if 0 <= px < w and 0 <= py < h:
-                    points.append(heatmap[py, px])
-
-            if len(points) > 0 and np.mean(points) > center_val * 0.5:
-                spread = radius
-
-        spreads.append(spread)
-
-    if len(spreads) == 0:
-        return "Diffuse Attention"
-
-    avg_spread = np.mean(spreads)
-
-    if avg_spread < 25:
-        return "Focused Attention"
-    elif avg_spread < 50:
-        return "Moderate Spread"
+    if fraction < 0.10:
+        label = "Focused Attention"
+    elif fraction < 0.25:
+        label = "Moderate Spread"
     else:
-        return "Diffuse Attention"
+        label = "Diffuse Attention"
+    return float(fraction), label
 
 
-def draw_halo(image, x, y):
+def generate_saliency_evolution(display, cam, lesions, fraction, label):
+    out = (display * 0.8).astype(np.uint8)
 
-    overlay = image.copy()
+    for level, color in LEVELS:
+        mask = (cam >= level).astype(np.uint8)
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        cv2.drawContours(out, contours, -1, color, 2, cv2.LINE_AA)
 
-    # create soft glow
-    cv2.circle(overlay, (x, y), 60, (0,255,255), -1)
+    for les in lesions:
+        cv2.circle(out, (les["x"], les["y"]), 2, (255, 255, 255), -1, cv2.LINE_AA)
 
-    overlay = cv2.GaussianBlur(overlay, (51,51), 0)
-
-    result = cv2.addWeighted(image, 0.7, overlay, 0.3, 0)
-
-    return result
-
-
-def generate_saliency_evolution(image_path):
-
-    gradcam_result = run_gradcam(image_path)
-
-    heatmap_path = gradcam_result["heatmap_path"]
-    prediction = gradcam_result["prediction"]
-
-    original = cv2.imread(image_path)
-    heatmap_img = cv2.imread(heatmap_path)
-
-    gray = cv2.cvtColor(heatmap_img, cv2.COLOR_BGR2GRAY)
-
-    lesions = detect_lesions(original)
-
-    output = heatmap_img.copy()
-
-    for x, y, r in lesions:
-
-        output = draw_halo(output, x, y)
-
-        cv2.circle(output, (x, y), 4, (255,255,255), -1)
-
-    behavior = compute_attention_behavior(gray, lesions)
-
-    # label color
-    if behavior == "Focused Attention":
-        color = (0,255,0)
-    elif behavior == "Moderate Spread":
-        color = (0,255,255)
-    else:
-        color = (0,0,255)
-
-    text = f"Saliency: {behavior}"
-
-    cv2.putText(
-        output,
-        text,
-        (20,30),                 # safer position
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.6,                     # smaller font
-        color,
-        2,
-        cv2.LINE_AA
-    )
-
-    filename = os.path.basename(image_path)
-
-    output_path = os.path.join(
-        OUTPUT_DIR,
-        f"saliency_{filename}"
-    )
-
-    cv2.imwrite(output_path, output)
-
-    return {
-        "prediction": prediction,
-        "behavior": behavior,
-        "output_path": output_path
-    }
+    cv2.rectangle(out, (0, 0), (out.shape[1], 30), (20, 20, 20), -1)
+    color = {"Focused Attention": (0, 220, 0), "Moderate Spread": (0, 220, 255)}.get(label, (80, 80, 255))
+    cv2.putText(out, f"{label}: 50% of attention in {fraction * 100:.0f}% of retina", (10, 21),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1, cv2.LINE_AA)
+    return out

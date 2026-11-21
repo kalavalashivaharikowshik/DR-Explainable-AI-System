@@ -1,105 +1,72 @@
-import os
+"""Focus consistency: does the model's strongest attention fall on lesion candidates?
+
+score = share of the high-attention area (CAM >= 0.5) that lies within the
+neighbourhood of a detected lesion candidate.
+"""
+
 import cv2
 import numpy as np
 
-from src.explainability.gradcam import run_gradcam
-from src.explainability.layered_evidence_map import detect_lesions
-
-OUTPUT_DIR = "outputs/focus_consistency"
-os.makedirs(OUTPUT_DIR, exist_ok=True)
+HIGH_ATTENTION = 0.5
 
 
-def build_lesion_mask(image, lesions):
-
-    mask = np.zeros(image.shape[:2], dtype=np.uint8)
-
-    for x, y, r in lesions:
-        cv2.circle(mask, (x, y), int(r*1.5), 255, -1)
-
-    return mask
+def build_lesion_mask(shape, lesions, margin: int):
+    mask = np.zeros(shape[:2], dtype=np.uint8)
+    for les in lesions:
+        cv2.circle(mask, (les["x"], les["y"]), int(les["r"] * 1.5) + margin, 1, -1)
+    return mask.astype(bool)
 
 
-def build_attention_mask(heatmap_img):
+def compute_focus_consistency(cam: np.ndarray, lesions, fov_mask: np.ndarray):
+    """Return (score in [0,1] or None, label)."""
+    if not lesions:
+        return None, "No lesion candidates"
 
-    gray = cv2.cvtColor(heatmap_img, cv2.COLOR_BGR2GRAY)
+    margin = int(cam.shape[0] * 0.02)
+    lesion_mask = build_lesion_mask(cam.shape, lesions, margin)
+    attention = (cam >= HIGH_ATTENTION) & fov_mask
 
-    # normalize
-    gray = gray / 255.0
+    attention_area = int(attention.sum())
+    if attention_area == 0:
+        return 0.0, "Low Agreement"
 
-    # threshold top attention
-    mask = (gray > 0.6).astype(np.uint8) * 255
-
-    return mask
-
-
-def compute_overlap(attention_mask, lesion_mask):
-
-    intersection = cv2.bitwise_and(attention_mask, lesion_mask)
-
-    union = cv2.bitwise_or(attention_mask, lesion_mask)
-
-    inter_area = np.sum(intersection > 0)
-    union_area = np.sum(union > 0)
-
-    if union_area == 0:
-        return 0
-
-    return inter_area / union_area
-
-
-def generate_focus_consistency(image_path):
-
-    gradcam_result = run_gradcam(image_path)
-
-    prediction = gradcam_result["prediction"]
-    heatmap_path = gradcam_result["heatmap_path"]
-
-    original = cv2.imread(image_path)
-    heatmap_img = cv2.imread(heatmap_path)
-
-    lesions = detect_lesions(original)
-
-    lesion_mask = build_lesion_mask(original, lesions)
-    attention_mask = build_attention_mask(heatmap_img)
-
-    score = compute_overlap(attention_mask, lesion_mask)
-
-    output = heatmap_img.copy()
+    score = float((attention & lesion_mask).sum()) / attention_area
 
     if score > 0.4:
         label = "High Agreement"
-        color = (0,255,0)
-
     elif score > 0.15:
         label = "Partial Agreement"
-        color = (0,255,255)
-
     else:
         label = "Low Agreement"
-        color = (0,0,255)
 
-    cv2.putText(
-        output,
-        f"Consistency: {label}",
-        (30,40),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        1,
-        color,
-        2
-    )
+    return score, label
 
-    filename = os.path.basename(image_path)
 
-    output_path = os.path.join(
-        OUTPUT_DIR,
-        f"consistency_{filename}"
-    )
+def generate_focus_consistency(display, cam, lesions, fov_mask, score, label):
+    """Image: attention contour + lesion neighbourhoods, coloured by agreement."""
+    out = display.copy()
+    size = cam.shape[0]
+    margin = int(size * 0.02)
 
-    cv2.imwrite(output_path, output)
+    lesion_mask = build_lesion_mask(cam.shape, lesions, margin) if lesions else np.zeros(cam.shape, bool)
+    attention = (cam >= HIGH_ATTENTION) & fov_mask
+    overlap = attention & lesion_mask
 
-    return {
-        "prediction": prediction,
-        "consistency_score": score,
-        "consistency_label": label,
-        "output_path": output_path
-    }
+    tint = out.copy()
+    tint[attention & ~lesion_mask] = (255, 140, 0)      # attention only -> blue
+    tint[lesion_mask & ~attention] = (0, 200, 255)       # lesion only   -> amber
+    tint[overlap] = (0, 220, 0)                          # agreement     -> green
+    out = cv2.addWeighted(out, 0.55, tint, 0.45, 0)
+
+    contours, _ = cv2.findContours(attention.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    cv2.drawContours(out, contours, -1, (255, 255, 255), 1, cv2.LINE_AA)
+
+    color = {"High Agreement": (0, 220, 0), "Partial Agreement": (0, 220, 255)}.get(label, (80, 80, 255))
+    text = label if score is None else f"{label} ({score * 100:.0f}%)"
+    _label(out, text, color)
+    return out
+
+
+def _label(img, text, color):
+    cv2.rectangle(img, (0, 0), (img.shape[1], 30), (20, 20, 20), -1)
+    cv2.putText(img, text, (10, 21), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 1, cv2.LINE_AA)
