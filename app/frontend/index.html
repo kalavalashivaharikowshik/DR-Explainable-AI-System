@@ -1,757 +1,183 @@
-    <!DOCTYPE html>
-    <html>
-    <head>
-    <title>DR Explainable AI Dashboard</title>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DR Explainable AI System</title>
+<meta name="description" content="Explainable AI screening for diabetic retinopathy from retinal fundus images.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='44' fill='%230ea5e9'/><circle cx='50' cy='50' r='18' fill='%230f172a'/></svg>">
+<link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
 
-    <style>
+<header class="topbar">
+  <div class="brand">
+    <span class="logo" aria-hidden="true"></span>
+    <div>
+      <h1>DR Explainable AI</h1>
+      <p>Diabetic retinopathy screening with transparent reasoning</p>
+    </div>
+  </div>
+  <nav>
+    <span id="modelStatus" class="status-pill" aria-live="polite">Checking model…</span>
+    <button class="ghost" type="button" data-open="workflowDialog">How it works</button>
+  </nav>
+</header>
 
-    body{
-    font-family: "Segoe UI", sans-serif;
-    background:linear-gradient(135deg,#0f172a,#1e293b);
-    margin:0;
-    padding:0;
-    color:#e2e8f0;
-    }
+<main class="layout">
 
-    /* HEADER */
+  <!-- ============ LEFT COLUMN ============ -->
+  <aside class="side">
+    <section class="panel" aria-labelledby="uploadTitle">
+      <h2 id="uploadTitle">1. Upload fundus image</h2>
 
-    .header{
-    background:linear-gradient(90deg,#0ea5e9,#2563eb);
-    color:white;
-    padding:18px;
-    text-align:center;
-    font-size:24px;
-    font-weight:bold;
-    letter-spacing:1px;
-    box-shadow:0 0 20px rgba(37,99,235,0.6);
-    }
+      <label id="dropZone" class="dropzone" for="imageInput">
+        <input type="file" id="imageInput" accept=".jpg,.jpeg,.png,.bmp,.tif,.tiff,image/*">
+        <img id="previewImg" alt="Selected retina image preview" hidden>
+        <span id="dropText">
+          <strong>Drop an image here</strong> or click to browse
+          <small id="uploadHint">JPG, PNG, BMP or TIFF</small>
+        </span>
+      </label>
 
-    /* MAIN AREA */
+      <label class="field">
+        <span>Image type</span>
+        <select id="preprocessed">
+          <option value="auto">Detect automatically</option>
+          <option value="false">Raw fundus photograph</option>
+          <option value="true">Already preprocessed (Ben Graham)</option>
+        </select>
+      </label>
 
-    .container{
-    width:1100px;
-    margin:auto;
-    margin-top:25px;
-    margin-left:300px;
-    }
+      <button id="analyzeBtn" class="primary wide" type="button" disabled>Analyze retina</button>
+    </section>
 
-    /* UPLOAD BOX */
+    <section class="panel" aria-labelledby="refTitle">
+      <h2 id="refTitle">Reference cases</h2>
+      <div id="refTabs" class="tabs" role="tablist"></div>
+      <div id="referenceImages" class="ref-grid"></div>
+    </section>
+  </aside>
 
-    .upload-box{
-    background:rgba(255,255,255,0.05);
-    backdrop-filter:blur(10px);
-    padding:25px;
-    border-radius:12px;
-    text-align:center;
-    margin-bottom:25px;
-    border:1px solid rgba(255,255,255,0.1);
-    box-shadow:0 0 25px rgba(0,0,0,0.4);
-    transition:all 0.3s;
-    }
+  <!-- ============ MAIN COLUMN ============ -->
+  <section class="content" aria-live="polite">
 
-    .upload-box:hover{
-    box-shadow:0 0 40px rgba(14,165,233,0.6);
-    }
+    <div id="emptyState" class="panel hero">
+      <h2>Upload a retinal image to begin</h2>
+      <p>The system grades diabetic retinopathy on the international 5-level scale and shows
+        <em>why</em> the model reached its decision: where it looked, whether that matches visible
+        lesion candidates, and whether the photo is good enough to trust.</p>
+      <ol class="steps">
+        <li><b>Preprocess</b> crop, CLAHE and Ben Graham filtering, exactly as in training</li>
+        <li><b>Classify</b> EfficientNet-B3 predicts the DR grade</li>
+        <li><b>Explain</b> Grad-CAM and seven complementary visual explanations</li>
+        <li><b>Report</b> AES-256 encrypted PDF to download or email</li>
+      </ol>
+    </div>
 
-    /* BUTTONS */
+    <div id="loading" class="panel loading" hidden>
+      <div class="spinner" aria-hidden="true"></div>
+      <h2>Analyzing retina…</h2>
+      <p id="loadingStep">Preprocessing image</p>
+    </div>
 
-    button{
-    padding:10px 18px;
-    background:linear-gradient(135deg,#2563eb,#0ea5e9);
-    color:white;
-    border:none;
-    border-radius:8px;
-    cursor:pointer;
-    font-weight:600;
-    transition:all 0.25s;
-    box-shadow:0 0 8px rgba(37,99,235,0.6);
-    }
+    <div id="results" hidden>
 
-    button:hover{
-    transform:scale(1.05);
-    box-shadow:0 0 18px rgba(14,165,233,1);
-    }
+      <section class="panel summary">
+        <div class="summary-main">
+          <p class="eyebrow">AI grading</p>
+          <h2 id="predLabel" class="grade">–</h2>
+          <p class="muted"><span id="confidence"></span> confidence · <span id="modelName"></span></p>
+          <div id="chips" class="chips"></div>
+          <p id="lowConfidence" class="warn" hidden></p>
+        </div>
+        <div class="summary-probs">
+          <h3>Severity probabilities</h3>
+          <div id="probBars" class="bars"></div>
+        </div>
+      </section>
 
-    /* PREDICTION PANEL */
+      <section class="panel">
+        <div class="panel-head">
+          <h2>2. Visual explanations</h2>
+          <span class="muted small">Click an image to enlarge · ⓘ for how to read it</span>
+        </div>
+        <div id="gallery" class="gallery"></div>
+      </section>
 
-    .prediction{
-    background:rgba(255,255,255,0.05);
-    padding:18px;
-    border-radius:10px;
-    margin-bottom:20px;
-    font-size:18px;
-    border:1px solid rgba(255,255,255,0.1);
-    }
+      <div class="two-col">
+        <section class="panel">
+          <h2>Attention by retinal zone</h2>
+          <div id="regionBars" class="bars"></div>
+          <p class="muted small">Share of Grad-CAM attention in concentric zones scaled to the retina
+            (assumes a macula-centred photograph).</p>
+        </section>
 
-    /* GRID FOR AI MAPS */
+        <section class="panel" id="reportPanel">
+          <h2>3. Clinical report</h2>
+          <p class="muted small">The PDF is encrypted with AES-256. Share the password separately from the file;
+            it is shown only here and is not stored on the server.</p>
+          <div class="password-row">
+            <code id="pdfPassword">–</code>
+            <button class="ghost" type="button" id="copyPwd">Copy</button>
+          </div>
+          <div class="btn-row">
+            <a id="previewLink" class="btn" target="_blank" rel="noopener">Preview</a>
+            <a id="downloadLink" class="btn primary">Download PDF</a>
+          </div>
+          <form id="emailForm" class="email-row" hidden>
+            <input type="email" id="doctorEmail" placeholder="doctor@hospital.org" required
+                   aria-label="Recipient email">
+            <button class="primary" type="submit" id="sendBtn">Email report</button>
+          </form>
+          <p id="emailDisabled" class="muted small" hidden>Email delivery is not configured on this server.</p>
+          <p class="muted small" id="ttlNote"></p>
+        </section>
+      </div>
 
-    .grid{
-    display:grid;
-    grid-template-columns:1fr 1fr;
-    gap:20px;
-    }
-
-    /* CARDS */
-
-    .card{
-    background:rgba(255,255,255,0.05);
-    padding:12px;
-    border-radius:10px;
-    text-align:center;
-    border:1px solid rgba(255,255,255,0.08);
-    transition:all 0.3s;
-    }
-
-    .card:hover{
-    transform:translateY(-5px);
-    box-shadow:0 0 25px rgba(14,165,233,0.6);
-    }
-
-    .card img{
-    width:100%;
-    border-radius:8px;
-    transition:transform 0.3s;
-    }
-
-    .card img:hover{
-    transform:scale(1.03);
-    }
-
-    /* REGION PANEL */
-
-    .region{
-    background:rgba(255,255,255,0.05);
-    padding:20px;
-    border-radius:10px;
-    margin-top:20px;
-    border:1px solid rgba(255,255,255,0.08);
-    }
-
-    /* BARS */
-
-    .bar{
-    flex:1;
-    height:12px;
-    background:#334155;
-    border-radius:6px;
-    margin-left:10px;
-    }
-
-    .fill{
-    height:100%;
-    background:linear-gradient(90deg,#22c55e,#4ade80);
-    border-radius:6px;
-    transition:width 0.6s ease;
-    }
-
-    /* REPORT PANEL */
-
-    .report-panel{
-    background:rgba(255,255,255,0.05);
-    padding:15px;
-    border-radius:10px;
-    margin-top:20px;
-    text-align:center;
-    border:1px solid rgba(255,255,255,0.1);
-    }
-
-    /* SIDEBAR */
-
-    .sidebar{
-    position:fixed;
-    left:20px;
-    top:70px;
-    width:220px;
-    height:85vh;
-    background:rgba(255,255,255,0.05);
-    backdrop-filter:blur(10px);
-    padding:15px;
-    border-radius:12px;
-    border:1px solid rgba(255,255,255,0.08);
-    box-shadow:0 0 25px rgba(14,165,233,0.4);
-    }
-
-    /* REFERENCE IMAGES */
-
-    #referenceImages{
-    margin-top:10px;
-    height:335px;
-    overflow-y:auto;
-    display:flex;
-    flex-direction:column;
-    gap:10px;
-    }
-
-    /* SCROLLBAR */
-
-    #referenceImages::-webkit-scrollbar{
-    width:6px;
-    }
-
-    #referenceImages::-webkit-scrollbar-thumb{
-    background:#0ea5e9;
-    border-radius:10px;
-    }
-
-    /* INFO ICON */
-
-    .info{
-    cursor:pointer;
-    margin-left:6px;
-    color:#38bdf8;
-    font-weight:bold;
-    }
-
-    .workflow-btn{
-    margin-left:20px;
-    padding:8px 14px;
-    background:#0ea5e9;
-    border:none;
-    border-radius:8px;
-    cursor:pointer;
-    font-size:14px;
-    font-weight:600;
-    box-shadow:0 0 10px rgba(14,165,233,0.8);
-    transition:all 0.3s;
-    }
-
-    .workflow-btn:hover{
-    transform:scale(1.05);
-    box-shadow:0 0 20px rgba(14,165,233,1);
-    }
-
-    /* DROPDOWN PANEL */
-
-    .workflow-panel{
-    display:none;
-    position:absolute;
-    top:70px;
-    left:50%;
-    transform:translateX(-50%);
-    width:600px;
-    background:rgba(30,41,59,0.95);
-    padding:20px;
-    border-radius:12px;
-    border:1px solid rgba(255,255,255,0.1);
-    box-shadow:0 0 25px rgba(14,165,233,0.7);
-    z-index:1000;
-    animation:fadeSlide 0.4s ease;
-    }
-
-    .workflow-panel p{
-    margin:8px 0;
-    font-size:15px;
-    }
-
-    /* Animation */
-
-    @keyframes fadeSlide{
-
-    from{
-    opacity:0;
-    transform:translate(-50%,-20px);
-    }
-
-    to{
-    opacity:1;
-    transform:translate(-50%,0);
-    }
-
-    }
-
-
-    </style>
-    </head>
-
-    <body>
-
-    <div class="header">
-
-    <span>Diabetic Retinopathy Explainable AI System</span>
-
-    <button class="workflow-btn" onclick="toggleWorkflow()">
-    ⚙ System Workflow
-    </button>
-
-   </div>
-
-    <!-- SYSTEM WORKFLOW PANEL -->
-
-    <div id="workflowPanel" class="workflow-panel">
-
-    <h3>System Workflow</h3>
-
-    <p>1️⃣ Upload retinal fundus image</p>
-    <p>2️⃣ AI model analyzes diabetic retinopathy severity</p>
-    <p>3️⃣ Explainable AI visualizations are generated</p>
-    <p>4️⃣ Clinician reviews AI evidence maps</p>
-    <p>5️⃣ Secure clinical report can be downloaded or emailed</p>
+      <section class="panel" id="comparisonPanel">
+        <h2>Compare with reference cases</h2>
+        <div id="comparison" class="compare"></div>
+      </section>
 
     </div>
 
-    <div class="container">
-
-    <div class="upload-box">
-
-    <input type="file" id="imageInput">
-
-
-    <br><br>
-
-    <button onclick="uploadImage()">Analyze Retina</button>
-
-    </div>
-
-    <div id="results"></div>
-
-
-    <div class="sidebar">
-
-    <h3>Reference Cases</h3>
-
-    <button onclick="loadFolder(0)">No DR</button><br><br>
-    <button onclick="loadFolder(1)">Mild</button><br><br>
-    <button onclick="loadFolder(2)">Moderate</button><br><br>
-    <button onclick="loadFolder(3)">Severe</button><br><br>
-    <button onclick="loadFolder(4)">Proliferative</button>
-
-    <div id="referenceImages"></div>
-
-    </div>
-
-    </div>
-
-    <script>
-
-    async function uploadImage(){
-
-    let fileInput=document.getElementById("imageInput")
-
-    /* SHOW LOADING MESSAGE */
-
-    document.getElementById("results").innerHTML =
-    "<h3 style='text-align:center'>Analyzing Retina... 🧠</h3>";
-
-    let formData=new FormData()
-
-    formData.append("file",fileInput.files[0])
-
-    let response=await fetch("http://127.0.0.1:8000/analyze",{
-    method:"POST",
-    body:formData
-    })
-
-    let data=await response.json()
-
-    displayResults(data)
-
-
-    }
-
-    function displayResults(data){
-
-    window.report_pdf = data.report_pdf
-    window.report_password = data.pdf_password
-
-    let html=""
-
-    html+=`
-    <div class="prediction">
-
-    <h3>AI Diagnosis Summary</h3>
-
-    Model: <b>EfficientNet-B4 (Transfer Learning)</b><br>
-    Dataset: <b>EyePACS Diabetic Retinopathy Dataset</b><br><br>
-
-    Prediction: <b>${data.prediction}</b><br>
-
-    Confidence: <b>${(Math.max(...data.probabilities)*100).toFixed(1)}%</b><br>
-
-    Focus Consistency: <b>${data.consistency_label}</b>
-
-    <div class="report-panel">
-
-    <h3>AI Clinical Report</h3>
-
-    <input 
-    type="email" 
-    id="doctorEmail" 
-    placeholder="Enter doctor email"
-    style="padding:8px;width:220px;margin-bottom:10px;border-radius:5px;border:1px solid #ccc">
-
-    <br>
-
-    <button onclick="previewReport()">Preview Report</button>
-
-    <button onclick="downloadReport()">Download PDF</button>
-
-    <button onclick="sendReportEmail()">Send Report</button>
-
-    </div>
-    `
-
-    html+=`
-    <h3>Severity Progress</h3>
-
-    <div class="severity">
-
-    <div class="sev-row">
-    <span>No DR</span>
-    <div class="bar"><div class="fill" id="bar0"></div></div>
-    </div>
-
-    <div class="sev-row">
-    <span>Mild</span>
-    <div class="bar"><div class="fill" id="bar1"></div></div>
-    </div>
-
-    <div class="sev-row">
-    <span>Moderate</span>
-    <div class="bar"><div class="fill" id="bar2"></div></div>
-    </div>
-
-    <div class="sev-row">
-    <span>Severe</span>
-    <div class="bar"><div class="fill" id="bar3"></div></div>
-    </div>
-
-    <div class="sev-row">
-    <span>Proliferative</span>
-    <div class="bar"><div class="fill" id="bar4"></div></div>
-    </div>
-
-    </div>
-    `
-
-    /* ADD COMPARISON PANEL HERE */
-
-
-    html+=`
-    <div class="grid">
-
-    <div class="card">
-    <h3>
-    GradCAM
-    <span class="info" onclick="showInfo('gradcam')">ℹ</span>
-    </h3>
-    <img src="http://127.0.0.1:8000/${data.gradcam_heatmap}">
-    </div>
-
-    <div class="card">
-    <h3>
-    Evidence Map
-    <span class="info" onclick="showInfo('evidence')">ℹ</span>
-    </h3>
-
-    <img src="http://127.0.0.1:8000/${data.evidence_map}">
-    </div>
-
-    <div class="card">
-    <h3>
-    Consistency Map
-    <span class="info" onclick="showInfo('consistency')">ℹ</span>
-    </h3>
-
-    <img src="http://127.0.0.1:8000/${data.consistency_image}">
-    </div>
-
-    <div class="card">
-    <h3>
-    Saliency Map
-    <span class="info" onclick="showInfo('saliency')">ℹ</span>
-    </h3>
-
-    <img src="http://127.0.0.1:8000/${data.saliency_map}">
-    </div>
-
-    <div class="card">
-    <h3>
-    Region Importance
-    <span class="info" onclick="showInfo('region')">ℹ</span>
-    </h3>
-
-    <img src="http://127.0.0.1:8000/${data.region_map}">
-    </div>
-
-
-    <div class="card">
-    <h3>
-    Pseudo-3D Retina View
-    <span class="info" onclick="showInfo('pseudo3d')">ℹ</span>
-    </h3>
-
-    <img src="http://127.0.0.1:8000/${data.pseudo3d_map}">
-    </div>
-
-    <div class="card">
-    <h3>
-    Retinal Quality Overlay
-    <span class="info" onclick="showInfo('quality')">ℹ</span>
-    </h3>
-
-    <img src="http://127.0.0.1:8000/${data.quality_overlay}">
-    </div>
-
-    </div>
-    `
-
-    html+=`
-    <div class="region">
-    <h3>Region Importance Distribution</h3>
-
-    Macula
-    <div class="bar">
-    <div class="fill" style="width:${data.macula_importance*100}%"></div>
-    </div>
-
-    Mid Retina
-    <div class="bar">
-    <div class="fill" style="width:${data.mid_importance*100}%"></div>
-    </div>
-
-    Peripheral
-    <div class="bar">
-    <div class="fill" style="width:${data.peripheral_importance*100}%"></div>
-    </div>
-
-    </div>
-    `
-
-    html+=`
-
-    <div style="
-    margin-top:30px;
-    padding:12px;
-    font-size:13px;
-    text-align:center;
-    opacity:0.7;
-    border-top:1px solid rgba(255,255,255,0.1);
-    ">
-
-    ⚠ Research Use Only — This AI system assists clinical decision-making
-    and should not replace professional ophthalmologist diagnosis.
-
-    </div>
-
-    `
-
-    document.getElementById("results").innerHTML=html
-
-    let probs = data.probabilities
-
-    for(let i=0;i<5;i++){
-
-    let percent = probs[i] * 100
-
-    document.getElementById("bar"+i).style.width = percent + "%"
-
-    }
-
-    }
-
-
-
-    async function loadFolder(folder){
-
-    let response = await fetch(`http://127.0.0.1:8000/reference/${folder}`)
-
-    let data = await response.json()
-
-    let html=""
-
-    data.images.forEach(img => {
-
-    html += `<img src="http://127.0.0.1:8000${img}" 
-    style="width:100%;border-radius:6px">`
-
-    })
-
-    document.getElementById("referenceImages").innerHTML = html
-
-    }
-
-    function previewReport(){
-
-    window.open(
-    "http://127.0.0.1:8000/outputs/report/dr_report.pdf",
-    "_blank"
-    )
-
-    }
-
-    function downloadReport(){
-
-    let link = document.createElement("a")
-
-    link.href="http://127.0.0.1:8000/outputs/report/dr_report.pdf"
-
-    link.download="DR_AI_Report.pdf"
-
-    link.click()
-
-    }
-
-    function emailReport(){
-
-    alert("Report will be sent to the email entered above.")
-
-    }
-
-
-
-    async function sendReportEmail(){
-
-    let email = document.getElementById("doctorEmail").value
-
-    if(!email){
-    alert("Please enter doctor email")
-    return
-    }
-
-    let response = await fetch("http://127.0.0.1:8000/send-report",{
-
-    method:"POST",
-
-    headers:{
-    "Content-Type":"application/json"
-    },
-
-    body:JSON.stringify({
-    email:email,
-    pdf_path:window.report_pdf,
-    password:window.report_password
-    })
-
-    })
-
-    let data = await response.json()
-
-    alert("Report sent successfully")
-
-    }
-
-    function showInfo(type){
-
-    let text=""
-
-    if(type==="gradcam"){
-    text=`Grad-CAM Heatmap
-
-    Purpose:
-    Shows the retinal regions that most influenced the AI model prediction.
-
-    Color Guide:
-    Red → strongest attention
-    Yellow → moderate attention
-    Blue → low attention
-
-    Tip:
-    If highlighted areas overlap lesions like hemorrhages or exudates,
-    the AI is focusing on medically relevant regions.`
-    }
-
-    else if(type==="evidence"){
-    text=`Layered Retinal Evidence Map
-
-    Purpose:
-    Combines AI attention with detected lesion markers.
-
-    Markers:
-    Red → hemorrhages
-    Yellow → exudates
-    Blue → microaneurysms
-
-    Tip:
-    Overlap between lesions and heatmap means the AI used those
-    pathological features for prediction.`
-    }
-
-    else if(type==="consistency"){
-    text=`Focus Consistency Visualization
-
-    Purpose:
-    Checks if AI attention aligns with real lesions.
-
-    Green outline → strong agreement
-    Yellow outline → partial agreement
-
-    High agreement increases trust in the prediction.`
-    }
-
-    else if(type==="saliency"){
-    text=`Saliency Behavior
-
-    Purpose:
-    Shows how concentrated AI attention is around lesions.
-
-    Focused → attention near lesion
-    Moderate → slightly spread
-    Diffuse → scattered attention
-
-    Focused attention usually means more reliable reasoning.`
-    }
-
-    else if(type==="region"){
-    text=`Region-Wise Retina Importance
-
-    Purpose:
-    Shows which retinal regions influenced the prediction.
-
-    Macula → center vision
-    Optic Disc → nerve exit
-    Peripheral → outer retina
-
-    Darker regions indicate stronger influence.`
-    }
-
-    else if(type==="pseudo3d"){
-    text=`Pseudo-3D Retinal View
-
-    Purpose:
-    Separates retinal layers for easier interpretation.
-
-    Layers:
-    Original retina
-    Blood vessels
-    Detected lesions
-    AI attention
-
-    Helps visualize how anatomy and AI focus interact.`
-    }
-
-    else if(type==="quality"){
-    text=`Retinal Quality Overlay
-
-    Purpose:
-    Highlights areas with poor diagnostic quality.
-
-    Gray areas → blurred or low quality
-    Clear areas → reliable for analysis
-
-    If key regions are masked, the image may not be suitable
-    for accurate AI diagnosis.`
-    }
-
-    alert(text)
-
-    }
-
-    function toggleWorkflow(){
-
-    let panel = document.getElementById("workflowPanel")
-
-    if(panel.style.display === "block"){
-    panel.style.display = "none"
-    }else{
-    panel.style.display = "block"
-    }
-
-    }
-
-    </script>
-
-
-
-
-    </body>
-    </html>
+    <footer class="disclaimer">
+      ⚠ Research use only. This AI system supports, and does not replace, diagnosis by a qualified
+      ophthalmologist. Lesion markers are image-processing candidates, not a trained lesion detector.
+    </footer>
+  </section>
+</main>
+
+<!-- ============ DIALOGS ============ -->
+<dialog id="workflowDialog" class="dialog">
+  <h2>How the system works</h2>
+  <ol class="steps">
+    <li><b>Upload</b> a colour fundus photograph (or an already preprocessed one).</li>
+    <li><b>Preprocessing</b> crops the black border, enhances contrast (CLAHE) and applies Ben Graham
+      filtering, the same steps used to build the training set.</li>
+    <li><b>EfficientNet-B3</b>, trained on APTOS, EyePACS and Messidor images, predicts one of five grades.</li>
+    <li><b>Explainability</b>: Grad-CAM attention is compared with lesion candidates, retinal zones and image
+      quality so a clinician can judge whether the reasoning is plausible.</li>
+    <li><b>Report</b>: an encrypted PDF can be downloaded or emailed. Results are deleted automatically.</li>
+  </ol>
+  <form method="dialog"><button class="primary">Close</button></form>
+</dialog>
+
+<dialog id="infoDialog" class="dialog">
+  <h2 id="infoTitle"></h2>
+  <div id="infoBody"></div>
+  <form method="dialog"><button class="primary">Got it</button></form>
+</dialog>
+
+<dialog id="lightbox" class="lightbox">
+  <form method="dialog"><button class="close" aria-label="Close">×</button></form>
+  <img id="lightboxImg" alt="">
+  <p id="lightboxCaption"></p>
+</dialog>
+
+<div id="toast" class="toast" role="alert" hidden></div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
