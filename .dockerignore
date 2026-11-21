@@ -1,0 +1,12 @@
+.git
+.github
+__pycache__
+*.pyc
+.pytest_cache
+data
+datasets
+dr_unified_v2
+outputs
+app/uploads
+docs
+tests
