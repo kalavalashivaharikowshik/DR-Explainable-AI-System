@@ -55,12 +55,12 @@ def home():
 
 @app.get("/api/health")
 def health():
-    model_ok = True
     try:
-        get_predictor()
+        backend = get_predictor().backend
     except ModelNotAvailable:
-        model_ok = False
-    return {"status": "ok" if model_ok else "model_unavailable", "model_loaded": model_ok}
+        backend = None
+    return {"status": "ok" if backend else "model_unavailable", "model_loaded": backend is not None,
+            "backend": backend}
 
 
 @app.get("/api/config")

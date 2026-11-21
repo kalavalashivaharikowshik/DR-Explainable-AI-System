@@ -7,12 +7,14 @@ rendered overlay.
 
 import cv2
 import numpy as np
-import torch
 
 
 class GradCAM:
 
-    def __init__(self, model: torch.nn.Module, target_layer: torch.nn.Module):
+    def __init__(self, model, target_layer):
+        import torch  # imported lazily: the ONNX serving image has no PyTorch
+
+        self.torch = torch
         self.model = model
         self._activations = None
         self._gradients = None
@@ -27,13 +29,14 @@ class GradCAM:
     def _save_gradient(self, grad):
         self._gradients = grad
 
-    def generate(self, image_tensor: torch.Tensor, class_idx: int = None):
+    def generate(self, image_tensor, class_idx: int = None):
         """Run one forward + backward pass.
 
         Returns (probabilities [num_classes], class_idx, cam HxW float32 in [0,1]).
         """
         self.model.zero_grad(set_to_none=True)
 
+        torch = self.torch
         with torch.enable_grad():
             image_tensor = image_tensor.requires_grad_(False)
             logits = self.model(image_tensor)

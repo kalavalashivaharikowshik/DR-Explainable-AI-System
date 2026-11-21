@@ -26,6 +26,7 @@ def _env_path(name: str, default: str) -> str:
 # Model
 # ------------------------------------------------------------------
 MODEL_PATH = _env_path("DR_MODEL_PATH", "models/trained/best_model.pth")
+ONNX_MODEL_PATH = _env_path("DR_ONNX_MODEL_PATH", "models/trained/best_model.onnx")
 MODEL_NAME = "EfficientNet-B3"
 CLASS_NAMES = ["No DR", "Mild", "Moderate", "Severe", "Proliferative"]
 NUM_CLASSES = len(CLASS_NAMES)

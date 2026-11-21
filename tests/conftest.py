@@ -42,6 +42,8 @@ def processed_image():
 class FakePredictor:
     """Stands in for the real model so tests run without the 43 MB weights."""
 
+    backend = "fake"
+
     def predict(self, model_input):
         h, w = model_input.shape[:2]
         cam = np.zeros((10, 10), np.float32)
@@ -56,8 +58,8 @@ def fake_predictor():
     return FakePredictor()
 
 
-def model_weights_available():
-    path = os.path.join(ROOT, "models", "trained", "best_model.pth")
+def model_weights_available(name="best_model.pth"):
+    path = os.path.join(ROOT, "models", "trained", name)
     if not os.path.exists(path):
         return False
     with open(path, "rb") as f:

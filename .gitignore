@@ -20,9 +20,12 @@ app/uploads/
 *.pt
 *.h5
 models/trained/*.pth
+models/trained/*.onnx
 !models/trained/best_model.pth
 
 # OS / editors
 .DS_Store
 .idea/
 .vscode/
+!models/trained/best_model.onnx
+!models/trained/best_model_head.npz

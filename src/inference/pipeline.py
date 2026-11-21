@@ -4,10 +4,12 @@ The model runs ONCE (prediction + Grad-CAM in a single pass); every
 explainability module then reuses the same attention map and lesion candidates.
 """
 
+import io
 import os
 
 import cv2
 import numpy as np
+from PIL import Image
 
 from src.config.config import CLASS_NAMES, DISPLAY_SIZE, MODEL_INPUT_SIZE, RESULTS_DIR
 from src.explainability.focus_consistency import compute_focus_consistency, generate_focus_consistency
@@ -41,14 +43,28 @@ class InvalidImage(ValueError):
     pass
 
 
+MAX_PIXELS = 50_000_000     # refuse decompression bombs before decoding
+MAX_SIDE = 3072             # larger photos are downscaled (keeps memory low)
+
+
 def decode_image(data: bytes) -> np.ndarray:
-    array = np.frombuffer(data, dtype=np.uint8)
-    img = cv2.imdecode(array, cv2.IMREAD_COLOR)
+    try:
+        with Image.open(io.BytesIO(data)) as probe:     # reads only the header
+            w, h = probe.size
+    except Exception:
+        raise InvalidImage("The file is not a readable image.")
+    if w * h > MAX_PIXELS:
+        raise InvalidImage("Image is too large (maximum 50 megapixels).")
+
+    img = cv2.imdecode(np.frombuffer(data, dtype=np.uint8), cv2.IMREAD_COLOR)
     if img is None:
         raise InvalidImage("The file is not a readable image.")
     h, w = img.shape[:2]
     if min(h, w) < 128:
         raise InvalidImage("Image is too small (minimum 128 x 128 pixels).")
+    if max(h, w) > MAX_SIDE:
+        scale = MAX_SIDE / max(h, w)
+        img = cv2.resize(img, (round(w * scale), round(h * scale)), interpolation=cv2.INTER_AREA)
     return img
 
 

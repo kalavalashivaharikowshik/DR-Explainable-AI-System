@@ -130,3 +130,20 @@ def test_reference_endpoints_without_images(client):
     assert client.get("/api/reference/0").json()["images"] == []
     assert client.get("/api/reference/9").status_code == 404
     assert client.get("/api/reference/0/..%2F..%2Fsrc").status_code == 404
+
+
+def test_rejects_decompression_bomb_and_downscales_large_images():
+    import numpy as np
+    from PIL import Image
+
+    from src.inference.pipeline import InvalidImage, decode_image
+
+    buf = io.BytesIO()
+    Image.new("L", (9000, 6000)).save(buf, format="PNG")      # 54 MP, tiny file
+    with pytest.raises(InvalidImage):
+        decode_image(buf.getvalue())
+
+    big = np.zeros((4000, 5000, 3), np.uint8)
+    big[1000:3000, 1000:4000] = 120
+    ok, enc = cv2.imencode(".jpg", big)
+    assert max(decode_image(enc.tobytes()).shape[:2]) == 3072
