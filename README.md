@@ -2,6 +2,8 @@
 
 **Diabetic retinopathy grading from retinal fundus images, with explanations a clinician can check.**
 
+🌐 **Live demo:** <https://dr-explainable-ai-ab6k.onrender.com> (free tier: the first visit after a quiet period takes about a minute to wake up)
+
 [![CI](https://github.com/kalavalashivaharikowshik/DR-Explainable-AI-System/actions/workflows/ci.yml/badge.svg)](https://github.com/kalavalashivaharikowshik/DR-Explainable-AI-System/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
@@ -123,7 +125,9 @@ are identical to PyTorch; this is checked by `tests/test_model_integration.py`.
 4. Optional, for email reports: in the service's **Environment** tab set `SMTP_USER` (Gmail address)
    and `SMTP_PASSWORD` (a Gmail [app password](https://myaccount.google.com/apppasswords)).
 
-The site is served at `https://dr-explainable-ai.onrender.com` (or the name Render shows). Each push
+**Live demo:** <https://dr-explainable-ai-ab6k.onrender.com>
+
+The site is served at the URL Render shows for the service. Each push
 to `main` redeploys automatically after CI passes. Free services sleep after 15 minutes without
 visitors, and the first request after that takes about a minute.
 
@@ -189,7 +193,7 @@ DR-Explainable-AI-System
 │   └── utils/                     ids, cleanup, logging, metrics
 ├── models/trained/                best_model.pth (PyTorch) + best_model.onnx (serving), Git LFS
 ├── tests/                         pytest suite (API, security, preprocessing, explainability)
-├── scripts/                       export_onnx.py, fetch_model.py
+├── scripts/                       export_onnx.py, fetch_model.py, smoke_test.py
 ├── Dockerfile                     light ONNX Runtime image (~350 MB RAM)
 ├── render.yaml                    Render free-tier blueprint
 └── .github/workflows/             CI and deployment
