@@ -1,8 +1,12 @@
 import os
 import secrets
 import string
+import warnings
 
-from pypdf import PdfReader, PdfWriter
+# pypdf imports the legacy ARC4 cipher for reading old PDFs; we only use AES-256.
+warnings.filterwarnings("ignore", message=".*ARC4 has been moved.*")
+
+from pypdf import PdfReader, PdfWriter  # noqa: E402
 
 # no look-alike characters (0/O, 1/l/I) so the password is easy to read out
 _ALPHABET = "".join(c for c in string.ascii_letters + string.digits if c not in "0O1lI")

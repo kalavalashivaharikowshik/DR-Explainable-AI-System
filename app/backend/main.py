@@ -33,8 +33,9 @@ async def lifespan(app: FastAPI):
         log.info("Removed %d expired result folders", removed)
     if os.environ.get("DR_SKIP_MODEL_WARMUP") != "1":
         try:
-            get_predictor()   # load the model once, at startup
-            log.info("Model loaded from %s", config.MODEL_PATH)
+            predictor = get_predictor()   # load the model once, at startup
+            path = config.ONNX_MODEL_PATH if predictor.backend == "onnx" else config.MODEL_PATH
+            log.info("Model loaded (%s backend) from %s", predictor.backend, path)
         except ModelNotAvailable as e:
             log.error("%s", e)
     yield
